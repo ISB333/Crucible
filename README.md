@@ -153,8 +153,8 @@ under fresh re-verify.
 | Example | What it demonstrates | Requires |
 |---------|----------------------|----------|
 | `examples/integrity_suite/` | five classic gaming probes, each rejected | `crucible-py:0` |
-| `examples/lean_ladder/` | graded Lean 4 theorem proving, sorry-free | `crucible-lean:0` |
-| `examples/chem/` | molecular solubility optimization (v0.5) | `crucible-chem:0`, API key |
+| `examples/lean_ladder/` | Graded Lean 4 theorem proving (14 increasingly complex theorems), sorry-free | `crucible-lean:0` |
+| `examples/chem/` | Molecular solubility optimization (8 chemical scaffold challenges, v0.5) | `crucible-chem:0`, API key |
 | `examples/run_kata_real_model.py` | minimal end-to-end kata with a real model | `crucible-py:0`, API key |
 
 ### Integrity-gate suite
@@ -177,18 +177,52 @@ and shows Crucible rejecting each one:
 
 Each rejection is recorded in the append-only SQLite provenance and reproducible.
 
-### Lean math ladder
+### Lean Math Ladder
 
-A graded set of toy Lean 4 theorems (core Lean, no mathlib), each seeded with
-`sorry`. Crucible drives the `Lean()` verifier until the proof compiles
-sorry-free — a `sorry` or `axiom` is both a hole and a deny-list token, so it
-can never appear in an accepted proof.
+A graded collection of 14 increasingly complex Lean 4 theorems (core Lean only, no mathlib), each seeded with `sorry`. Crucible drives the `Lean()` verifier until the proof compiles sorry-free — `sorry` or `axiom` are both holes and deny-list tokens, ensuring no accepted proof contains unproven assumptions.
 
 ```bash
-.venv/bin/python examples/lean_ladder/run_ladder.py --scripted          # smoke
+.venv/bin/python examples/lean_ladder/run_ladder.py --scripted          # Smoke test with pre-recorded solutions
 ANTHROPIC_API_KEY=... .venv/bin/python examples/lean_ladder/run_ladder.py
 ```
 
-Rungs: `add_comm` → `add_assoc` → `a < a+1` → `a*0=0` → list append →
-monotone-under-successor.
+**Ladder Rungs (in increasing difficulty):**
+1. `add_comm` — Commutativity of natural number addition
+2. `add_assoc` — Associativity of natural number addition
+3. `succ_gt` — For any natural number `a`, `a < a + 1`
+4. `mul_zero` — Multiplication by zero is zero
+5. `list_append` — List append properties
+6. `le_succ` — Monotonicity under successor
+7. `rev_involution` — Reversing a list twice returns the original
+8. `sum_formula` — Sum of integers formula
+9. `tree_mirror` — Tree mirroring properties
+10. `pow_add` — Exponentiation addition property
+11. `isort_sorted` — Insertion sort correctness
+12. `isort_count` — Insertion sort element count
+13. `compiler_correct` — Toy compiler correctness
+14. `ackermann_gt` — Ackermann function growth property
+
+Each rung builds on previous proofs, creating a structured learning path for theorem proving.
+
+
+### Molecular Solubility Optimization
+
+A molecular optimization challenge where Crucible seeks to maximize aqueous solubility (logS) of organic molecules while preserving their core scaffolds. This example demonstrates v0.5's optimization capabilities with the `Chem` verifier.
+
+```bash
+.venv/bin/python examples/chem/run_chem_ladder.py --scripted          # Smoke test with pre-recorded solutions
+GOOGLE_API_KEY=... .venv/bin/python examples/chem/run_chem.py
+```
+
+**Chemical Scaffold Challenges:**
+1. `free_solubility` — Optimize solubility of a simple organic molecule
+2. `benzene_polyol` — Benzene ring with hydroxyl groups
+3. `pyridine_push` — Pyridine-based scaffold optimization
+4. `sulfonamide` — Sulfonamide functional group optimization
+5. `greasy_chain` — Long aliphatic chain optimization
+6. `naphthalene_burden` — Naphthalene scaffold optimization
+7. `indole_tight` — Indole scaffold with tight constraints
+8. `purine_summit` — Purine-based scaffold optimization
+
+Each challenge presents a starting molecule and Crucible iteratively modifies it to improve solubility, guided by the RDKit-based `Chem` verifier's scoring function. The goal is to reach a logS value ≥ 0.0 (highly soluble).
 

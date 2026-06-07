@@ -1,0 +1,6 @@
+# Ananke gate overrides for Crucible.
+# pytest-testmon 2.2.0 is incompatible with the gate's default
+# `-p no:cacheprovider` flag (INTERNALERROR KeyError: 'lf');
+# the wrapper strips it. See scripts/testmon-gate.
+[regression.python]
+command = "scripts/testmon-gate"

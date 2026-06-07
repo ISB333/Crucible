@@ -1,0 +1,6 @@
+# Rung 8: maximize predicted solubility (logS; higher is better) while KEEPING
+# a purine core (SMARTS c1ncc2ncnc2n1 must match; any ring N may carry the
+# substituent). Nine aromatic atoms, four nitrogens. Target: logS >= 0.1.
+# crucible:region start name=smiles
+c1ncc2[nH]cnc2n1
+# crucible:region end

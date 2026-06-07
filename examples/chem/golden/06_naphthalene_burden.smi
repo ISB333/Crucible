@@ -1,0 +1,6 @@
+# Golden: naphthalene with two polyol ether arms — logS -0.8319 >= -0.9
+# (calibrated vs crucible-chem:0). Naive: naphthol -3.0102, glyceryl ether
+# -2.3819, single pentitol arm -1.4083, single hexitol arm -1.0978.
+# crucible:region start name=smiles
+OC(CO)C(O)C(O)COc1ccc2cc(OCC(O)C(O)CO)ccc2c1
+# crucible:region end

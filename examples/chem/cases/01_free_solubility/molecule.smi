@@ -1,0 +1,5 @@
+# Rung 1 (warm-up): maximize predicted aqueous solubility (logS; higher is better).
+# No scaffold constraint. Target: logS >= 0.4. Keep a valid single-line SMILES.
+# crucible:region start name=smiles
+CCCCCCCC
+# crucible:region end

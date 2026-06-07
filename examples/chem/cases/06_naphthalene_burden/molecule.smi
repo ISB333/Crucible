@@ -1,0 +1,6 @@
+# Rung 6: maximize predicted solubility (logS; higher is better) while KEEPING
+# a naphthalene core (SMARTS c1ccc2ccccc2c1 must match). Ten locked aromatic
+# atoms: heavy logS penalty to overcome. Target: logS >= -0.9.
+# crucible:region start name=smiles
+c1ccc2ccccc2c1
+# crucible:region end

@@ -1,0 +1,4 @@
+# Optimize predicted aqueous solubility (logS, higher is better). Keep a valid molecule.
+# crucible:region start name=smiles
+CCCCCCCC
+# crucible:region end

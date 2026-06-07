@@ -1,0 +1,6 @@
+# Golden: pentitol indolyl ether (free N-H kept) — logS -0.8975 >= -0.95
+# (calibrated vs crucible-chem:0). Naive: 5-hydroxyindole -2.5118, serotonin
+# -2.1789, glyceryl ether -1.8718, serotonin tetraol ether -0.9863.
+# crucible:region start name=smiles
+OCC(O)C(O)C(O)C(O)COc1ccc2c(c1)cc[nH]2
+# crucible:region end

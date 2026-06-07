@@ -1,0 +1,6 @@
+# Rung 2: maximize predicted solubility (logS; higher is better) while KEEPING
+# a benzene ring (SMARTS c1ccccc1 must match). Aromatic carbons hurt logS, so
+# the ring must be paid for with polar decoration. Target: logS >= -0.35.
+# crucible:region start name=smiles
+c1ccccc1
+# crucible:region end

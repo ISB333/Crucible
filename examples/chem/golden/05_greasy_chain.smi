@@ -1,0 +1,6 @@
+# Golden: nonitol (every chain carbon hydroxylated) — logS 2.4668 >= 2.0
+# (calibrated vs crucible-chem:0). Naive: octanol -1.7251, octanediol -1.1109,
+# octitol 2.1843 (close but the insight is per-carbon hydroxylation).
+# crucible:region start name=smiles
+OCC(O)C(O)C(O)C(O)C(O)C(O)C(O)CO
+# crucible:region end

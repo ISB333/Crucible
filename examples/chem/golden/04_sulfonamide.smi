@@ -1,0 +1,5 @@
+# Golden: pentitol ether of benzenesulfonamide — logS 0.1909 >= 0.1 (calibrated
+# vs crucible-chem:0). Naive: 4-hydroxy -1.2764, glyceryl ether -0.7322.
+# crucible:region start name=smiles
+NS(=O)(=O)c1ccc(OCC(O)C(O)C(O)C(O)CO)cc1
+# crucible:region end

@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Ananke regression-gate wrapper.
+#
+# The gate invokes its python command with `--testmon -q -p no:cacheprovider`,
+# but pytest-testmon 2.2.0 crashes (INTERNALERROR KeyError: 'lf') when the
+# cacheprovider plugin is disabled: it reads options["lf"], an option that
+# cacheprovider registers. Strip that flag pair and run testmon normally.
+#
+# Note: the script name contains "testmon" on purpose — the gate's
+# with_testmon() skips appending --testmon when the command already names it.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+args=()
+while [[ $# -gt 0 ]]; do
+    if [[ "$1" == "-p" && "${2:-}" == "no:cacheprovider" ]]; then
+        shift 2
+        continue
+    fi
+    args+=("$1")
+    shift
+done
+
+exec .venv/bin/pytest --testmon "${args[@]}"

@@ -1,0 +1,6 @@
+# Rung 7: maximize predicted solubility (logS; higher is better) while KEEPING
+# an indole with a free N-H (SMARTS c1ccc2c(c1)cc[nH]2 must match — N-alkylation
+# breaks the match). Target: logS >= -0.95.
+# crucible:region start name=smiles
+c1ccc2c(c1)cc[nH]2
+# crucible:region end

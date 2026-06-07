@@ -1,0 +1,6 @@
+# Rung 4: maximize predicted solubility (logS; higher is better) while KEEPING
+# the benzenesulfonamide pharmacophore (SMARTS NS(=O)(=O)c1ccccc1 must match).
+# Target: logS >= 0.1.
+# crucible:region start name=smiles
+NS(=O)(=O)c1ccccc1
+# crucible:region end

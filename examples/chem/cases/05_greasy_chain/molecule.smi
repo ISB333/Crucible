@@ -1,0 +1,7 @@
+# Rung 5: maximize predicted solubility (logS; higher is better) while KEEPING
+# an 8-carbon aliphatic chain (SMARTS CCCCCCCC must match). The chain is very
+# hydrophobic; end-capping with one or two polar groups is far from enough.
+# Target: logS >= 2.0.
+# crucible:region start name=smiles
+CCCCCCCC
+# crucible:region end

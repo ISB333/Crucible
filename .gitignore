@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.testmondata*
+.ananke/*
+!.ananke/config.toml
+*.db
+.crucible-scratch/
+examples/solidity/out/
+examples/solidity/cache/
+.axon/
+.claude/
+test_verifier.py
+.env
+nohup.out

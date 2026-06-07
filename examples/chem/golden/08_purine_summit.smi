@@ -1,0 +1,6 @@
+# Golden: N9-pentitol purine — logS 0.1853 >= 0.1 (calibrated vs
+# crucible-chem:0). Naive: adenine -1.3029, dihydroxypropyl purine -0.8048,
+# glycerol-ether guanine -0.2208.
+# crucible:region start name=smiles
+OCC(O)C(O)C(O)C(O)Cn1cnc2cncnc21
+# crucible:region end

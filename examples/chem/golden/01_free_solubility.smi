@@ -1,0 +1,4 @@
+# Golden: water — logS 0.5679 >= 0.4 (calibrated vs crucible-chem:0).
+# crucible:region start name=smiles
+O
+# crucible:region end

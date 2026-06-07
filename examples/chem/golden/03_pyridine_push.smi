@@ -1,0 +1,5 @@
+# Golden: pentitol pyridyl ether — logS 0.0933 >= 0.0 (calibrated vs crucible-chem:0).
+# Naive attempts fail: 4-hydroxypyridine -1.5598, pyridoxine -1.1775, glyceryl ether -0.8775.
+# crucible:region start name=smiles
+OCC(O)C(O)C(O)C(O)COc1ccncc1
+# crucible:region end

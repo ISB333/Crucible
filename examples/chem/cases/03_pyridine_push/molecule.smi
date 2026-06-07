@@ -1,0 +1,6 @@
+# Rung 3: maximize predicted solubility (logS; higher is better) while KEEPING
+# a pyridine ring (SMARTS c1ccncc1 must match). Target: logS >= 0.0 — a small
+# polar substituent is not enough.
+# crucible:region start name=smiles
+c1ccncc1
+# crucible:region end

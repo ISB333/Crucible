@@ -1,0 +1,5 @@
+# Golden: pentitol phenyl ether — logS -0.2818 >= -0.35 (calibrated vs crucible-chem:0).
+# Naive attempts fail: phenol -1.9349, phloroglucinol -1.6214, glyceryl ether -1.2525.
+# crucible:region start name=smiles
+OCC(O)C(O)C(O)C(O)COc1ccccc1
+# crucible:region end

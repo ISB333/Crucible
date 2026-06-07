@@ -1,0 +1,19 @@
+Crucible — verifier-grounded multi-agent search engine.
+
+Test fixtures:
+- tests/fixtures/lean/apn/ (present): vendored from
+  google-deepmind/alphaproof-nexus-results (Apache-2.0) as acceptance test data.
+  Source: https://github.com/google-deepmind/alphaproof-nexus-results
+  License: Apache License, Version 2.0 — redistribution permitted.
+  Attribution preserved in file headers (Copyright 2026 Google LLC).
+  Files vendored: oeis_278070_conjecture_0.lean, oeis_a237271_conjecture_2.lean,
+  oeis_282779_conjecture_0.lean.
+
+v1 note (not yet vendored): the typed-artifact substrate and reactor modules
+are planned lifts from lamm-mit/scienceclaw (Apache-2.0) per PRD Patch P1;
+when vendored they will be listed here with full attribution.
+
+miniF2F (not vendored, pending): openai/miniF2F's lean/ folder is Apache-2.0
+(redistribution permitted), but its statements are Lean 3 and depend on mathlib;
+the Lean ladder (examples/lean_ladder/) is core-only Lean 4, so vendoring is
+deferred until a mathlib-enabled image exists. License verified 2026-06-06.

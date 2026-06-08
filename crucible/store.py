@@ -89,6 +89,10 @@ class Store:
             cols = {r[1] for r in self._conn.execute(f"PRAGMA table_info({table})")}
             if "score" not in cols:
                 self._conn.execute(f"ALTER TABLE {table} ADD COLUMN score REAL")
+        # Add reasoning_json column to episodes table if it doesn't exist
+        episode_cols = {r[1] for r in self._conn.execute("PRAGMA table_info(episodes)")}
+        if "reasoning_json" not in episode_cols:
+            self._conn.execute("ALTER TABLE episodes ADD COLUMN reasoning_json TEXT")
         self._conn.commit()
 
     def _insert(self, sql: str, params: tuple[object, ...]) -> int:

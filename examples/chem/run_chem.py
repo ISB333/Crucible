@@ -12,7 +12,7 @@ from crucible.verifiers import Chem
 result = run(
     task=Task.from_path(Path("examples/chem/molecule.smi"), editable=["smiles"]),
     verifier=Chem(target=0.4),  # calibrated target (matches the integration test)
-    model="gemini-3.5-flash",
+    model="claude-haiku-4-5",
     workers=3,
     episode=None,
     run_budget=RunBudget(episodes_per_worker=20, plateau_patience=5),

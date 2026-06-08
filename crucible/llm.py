@@ -28,6 +28,8 @@ class LLMSession(Protocol):
     def reply(self, results: Sequence[ToolResult]) -> list[ToolCall]: ...
     @property
     def cost_usd(self) -> float: ...  # 0.0 when unknown (e.g. local models)
+    @property
+    def messages(self) -> list[dict]: ...  # Returns the full conversation history with reasoning
 
 
 # Anthropic-style schemas; providers translate as needed (see providers.py).
@@ -84,15 +86,28 @@ class ScriptedSession:
     def __post_init__(self) -> None:
         self._queue: deque[Sequence[ToolCall]] = deque(self.script)
         self.prompt: tuple[str, str] | None = None
+        self._messages: list[dict] = []
 
     def start(self, system: str, user: str) -> list[ToolCall]:
         self.prompt = (system, user)
+        self._messages.append({"role": "system", "content": system})
+        self._messages.append({"role": "user", "content": user})
         return list(self._queue.popleft()) if self._queue else []
 
     def reply(self, results: Sequence[ToolResult]) -> list[ToolCall]:
+        for r in results:
+            self._messages.append({"role": "tool", "tool_call_id": r.call_id, "content": r.content})
         self.received.append(list(results))
-        return list(self._queue.popleft()) if self._queue else []
+        calls = list(self._queue.popleft()) if self._queue else []
+        if calls:
+            self._messages.append({"role": "assistant", "content": f"Tool calls: {[c.name for c in calls]}"})
+        return calls
 
     @property
     def cost_usd(self) -> float:
         return 0.0
+
+    @property
+    def messages(self) -> list[dict]:
+        """Returns the full conversation history with reasoning."""
+        return self._messages

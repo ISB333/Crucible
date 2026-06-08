@@ -6,6 +6,7 @@ __pycache__/
 .ruff_cache/
 .testmondata*
 .ananke/*
+.ananke/
 !.ananke/config.toml
 *.db
 .crucible-scratch/
@@ -14,5 +15,6 @@ examples/solidity/cache/
 .axon/
 .claude/
 test_verifier.py
+example_reasoning.py
 .env
 nohup.out

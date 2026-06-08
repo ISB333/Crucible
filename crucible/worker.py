@@ -1,5 +1,6 @@
 """The Ralph loop (PRD §5): episodes of multi-turn editing, verify after every edit."""
 
+import json
 import threading
 import time
 from collections.abc import Callable
@@ -88,7 +89,7 @@ def run_episode(
     session: LLMSession,
     budget: EpisodeBudget,
     integrity: IntegrityCheck,
-) -> EpisodeOutcome:
+) -> tuple[EpisodeOutcome, LLMSession]:
     start_artifact = artifact
     lessons: list[str] = []
     edits = 0
@@ -119,7 +120,7 @@ def run_episode(
         end_reason = "integrity_violation"
     if solved:
         end_reason = "solved"
-    return EpisodeOutcome(
+    outcome = EpisodeOutcome(
         artifact=artifact,
         solved=solved,
         turns=turns,
@@ -129,6 +130,7 @@ def run_episode(
         cost_usd=session.cost_usd,
         final_verdict=final,
     )
+    return outcome, session
 
 
 def outcome_rank(outcome: EpisodeOutcome) -> tuple[int, float]:
@@ -218,9 +220,11 @@ def run_worker(
         if run_budget.usd is not None and cost >= run_budget.usd:
             break
         t0 = time.time()
-        out = run_episode(artifact, verifier, ctx, new_session(ordinal), episode_budget, integrity)
+        out, session = run_episode(artifact, verifier, ctx, new_session(ordinal), episode_budget, integrity)
         episodes += 1
         cost += out.cost_usd
+        # Capture and store LLM reasoning
+        reasoning = json.dumps(session.messages, default=str)
         ep_id = store.add_episode(
             worker_id,
             ordinal=ordinal,
@@ -228,6 +232,7 @@ def run_worker(
             edits=out.edits,
             end_reason=out.end_reason,
             lessons=out.lessons,
+            reasoning=reasoning,
         )
         holes = len(scan_holes(out.artifact))
         score = out.final_verdict.value if isinstance(out.final_verdict, Scored) else None

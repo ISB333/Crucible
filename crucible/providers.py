@@ -111,6 +111,11 @@ class AnthropicSession:
         pin, pout = price_for(self._model_name)
         return (self._in_tokens * pin + self._out_tokens * pout) / 1_000_000
 
+    @property
+    def messages(self) -> list[dict]:
+        """Returns the full conversation history with reasoning."""
+        return self._messages
+
 
 class OpenAICompatSession:
     """OpenAI or any OpenAI-compatible endpoint (set OPENAI_BASE_URL for local models)."""
@@ -154,6 +159,11 @@ class OpenAICompatSession:
     def cost_usd(self) -> float:
         pin, pout = price_for(self._model_name)
         return (self._in_tokens * pin + self._out_tokens * pout) / 1_000_000
+
+    @property
+    def messages(self) -> list[dict]:
+        """Returns the full conversation history with reasoning."""
+        return self._messages
 
 
 class GeminiSession:
@@ -276,6 +286,11 @@ class GeminiSession:
     def cost_usd(self) -> float:
         pin, pout = price_for(self._model_name)
         return (self._in_tokens * pin + self._out_tokens * pout) / 1_000_000
+
+    @property
+    def messages(self) -> list[dict]:
+        """Returns the full conversation history with reasoning."""
+        return self._history
 
 
 def make_session(model: str, base_url: str | None = None) -> LLMSession:

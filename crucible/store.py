@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS episodes (
     turns INTEGER NOT NULL,
     edits INTEGER NOT NULL,
     end_reason TEXT NOT NULL,
-    lessons TEXT NOT NULL
+    lessons TEXT NOT NULL,
+    reasoning_json TEXT  -- LLM reasoning and conversation history
 );
 CREATE TABLE IF NOT EXISTS artifact_versions (
     id INTEGER PRIMARY KEY,
@@ -121,11 +122,12 @@ class Store:
         edits: int,
         end_reason: str,
         lessons: str,
+        reasoning: str = "",
     ) -> int:
         return self._insert(
-            "INSERT INTO episodes (worker_id, ordinal, turns, edits, end_reason, lessons)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (worker_id, ordinal, turns, edits, end_reason, lessons),
+            "INSERT INTO episodes (worker_id, ordinal, turns, edits, end_reason, lessons, reasoning_json)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (worker_id, ordinal, turns, edits, end_reason, lessons, reasoning),
         )
 
     def add_artifact_version(

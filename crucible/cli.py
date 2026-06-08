@@ -155,6 +155,48 @@ def show_reasoning(args) -> int:
                             print(json.dumps(content, indent=2))
                         else:
                             print(str(content))
+                    elif "parts" in msg:
+                        # Handle Gemini's parts structure
+                        parts = msg["parts"]
+                        for part in parts:
+                            if isinstance(part, dict):
+                                if "text" in part:
+                                    print(part["text"])
+                                elif "function_call" in part:
+                                    fc = part["function_call"]
+                                    if isinstance(fc, dict):
+                                        print(f"Tool: {fc['name']}({fc['args']})")
+                                    elif hasattr(fc, "name") and hasattr(fc, "args"):
+                                        print(f"Tool: {fc.name}({fc.args})")
+                                    else:
+                                        print(f"Tool: {str(fc)}")
+                                elif "function_response" in part:
+                                    fr = part["function_response"]
+                                    if isinstance(fr, dict) and "response" in fr and "output" in fr["response"]:
+                                        print(f"Result: {fr['response']['output']}")
+                                    elif hasattr(fr, "response") and hasattr(fr.response, "get"):
+                                        print(f"Result: {fr.response.get('output', str(fr))}")
+                                    else:
+                                        print(f"Result: {str(fr)}")
+                            elif isinstance(part, str):
+                                print(part)
+                            elif hasattr(part, "__dict__"):
+                                if hasattr(part, "text"):
+                                    print(part.text)
+                                elif hasattr(part, "function_call"):
+                                    fc = part.function_call
+                                    if hasattr(fc, "name") and hasattr(fc, "args"):
+                                        print(f"Tool: {fc.name}({fc.args})")
+                                    else:
+                                        print(f"Tool: {str(fc)}")
+                                elif hasattr(part, "function_response"):
+                                    fr = part.function_response
+                                    if hasattr(fr, "response") and hasattr(fr.response, "get"):
+                                        print(f"Result: {fr.response.get('output', str(fr))}")
+                                    else:
+                                        print(f"Result: {str(fr)}")
+                            else:
+                                print(str(part))
             except Exception as e:
                 print(f"Error parsing reasoning: {e}")
                 print(reasoning_json)

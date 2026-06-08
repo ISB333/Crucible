@@ -142,6 +142,15 @@ def show_reasoning(args) -> int:
                                         print(f"Tool: {item.get('name')}({item.get('input', {})})")
                                     elif item.get("type") == "tool_result":
                                         print(f"Result: {item.get('content', '')}")
+                                elif hasattr(item, "__dict__"):
+                                    # Handle TextBlock and ToolUseBlock objects (from Anthropic SDK)
+                                    if hasattr(item, "text"):
+                                        print(item.text)
+                                    elif hasattr(item, "name"):
+                                        print(f"Tool: {item.name}({item.input})")
+                                else:
+                                    # Fallback to string representation
+                                    print(str(item))
                         elif isinstance(content, dict):
                             print(json.dumps(content, indent=2))
                         else:

@@ -290,7 +290,31 @@ class GeminiSession:
     @property
     def messages(self) -> list[dict]:
         """Returns the full conversation history with reasoning."""
-        return self._history
+        # Serialize Google API objects to plain dicts for JSON serialization
+        serialized = []
+        for msg in self._history:
+            serialized_msg = {"role": msg["role"]}
+            parts = []
+            for part in msg["parts"]:
+                if hasattr(part, "text"):
+                    if part.text:
+                        parts.append({"text": part.text})
+                elif hasattr(part, "function_call"):
+                    fc = part.function_call
+                    parts.append({"function_call": {"name": fc.name, "args": fc.args, "id": fc.id}})
+                elif hasattr(part, "function_response"):
+                    fr = part.function_response
+                    parts.append({"function_response": {"name": fr.name, "response": fr.response, "id": fr.id}})
+                elif isinstance(part, dict):
+                    # Filter out None values
+                    filtered_part = {k: v for k, v in part.items() if v is not None}
+                    if filtered_part:
+                        parts.append(filtered_part)
+                elif part is not None:
+                    parts.append(str(part))
+            serialized_msg["parts"] = parts
+            serialized.append(serialized_msg)
+        return serialized
 
 
 def make_session(model: str, base_url: str | None = None) -> LLMSession:

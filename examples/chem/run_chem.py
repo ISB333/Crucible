@@ -11,12 +11,15 @@ from crucible import Task, run
 from crucible.budgets import RunBudget
 from crucible.verifiers import Chem
 
+# Get the directory of the current script
+SCRIPT_DIR = Path(__file__).parent
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--model", default="claude-haiku-4-5")
 args = parser.parse_args()
 
 result = run(
-    task=Task.from_path(Path("examples/chem/molecule.smi"), editable=["smiles"]),
+    task=Task.from_path(SCRIPT_DIR / "molecule.smi", editable=["smiles"]),
     verifier=Chem(target=0.4),  # calibrated target (matches the integration test)
     model=args.model,
     workers=3,

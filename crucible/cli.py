@@ -72,136 +72,151 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--out", default="crucible-out", help="where to write the result artifact")
     r.add_argument("--db", default="crucible.db")
 
+    # List runs command
+    ls = sub.add_parser("runs", help="list runs stored in the database")
+    ls.add_argument("--db", default="crucible.db", help="database file to read from")
+
     # Show reasoning command
     s = sub.add_parser("reasoning", help="show LLM reasoning for a run")
-    s.add_argument("run_id", type=int, help="run ID to display reasoning for")
+    s.add_argument("run_id", type=int, nargs="?", help="run ID (default: latest run)")
     s.add_argument("--db", default="crucible.db", help="database file to read from")
-    s.add_argument("--worker", type=int, help="specific worker index to show")
-    s.add_argument("--episode", type=int, help="specific episode number to show")
+    s.add_argument("--worker", type=int, help="filter to a specific worker index")
+    s.add_argument("--episode", type=int, help="filter to a specific episode number")
 
     return p
 
 
-def show_reasoning(args) -> int:
-    """Show LLM reasoning for a specific run."""
-    from crucible.store import Store
-    import json
+def _render_message(msg: dict) -> None:
+    """Print one message from a stored (plain-dict) conversation."""
+    import json as _json
 
+    role = msg.get("role", "?")
+    # Anthropic / OpenAI format: "content" key
+    if "content" in msg:
+        content = msg["content"]
+        if isinstance(content, str):
+            print(f"[{role}] {content}")
+        elif isinstance(content, list):
+            print(f"[{role}]")
+            for item in content:
+                if not isinstance(item, dict):
+                    print(f"  {item}")
+                    continue
+                t = item.get("type")
+                if t == "text":
+                    print(f"  {item.get('text', '')}")
+                elif t == "tool_use":
+                    print(f"  → {item.get('name')}({_json.dumps(item.get('input', {}), ensure_ascii=False)})")
+                elif t == "tool_result":
+                    print(f"  ← {item.get('content', '')}")
+                else:
+                    # OpenAI tool call wrapper or unknown
+                    print(f"  {_json.dumps(item, ensure_ascii=False)}")
+        else:
+            print(f"[{role}] {content}")
+    # Gemini format: "parts" key
+    elif "parts" in msg:
+        print(f"[{role}]")
+        for part in msg["parts"]:
+            if not isinstance(part, dict):
+                print(f"  {part}")
+                continue
+            if "text" in part:
+                print(f"  {part['text']}")
+            elif "function_call" in part:
+                fc = part["function_call"]
+                print(f"  → {fc.get('name')}({_json.dumps(fc.get('args', {}), ensure_ascii=False)})")
+            elif "function_response" in part:
+                fr = part["function_response"]
+                output = fr.get("response", {}).get("output", str(fr))
+                print(f"  ← {output}")
+    else:
+        import json as _json
+        print(f"[{role}] {_json.dumps(msg, ensure_ascii=False)}")
+
+
+def _require_db(path: str) -> bool:
+    from pathlib import Path
+    if not Path(path).exists():
+        print(f"Error: database file not found: {path}")
+        return False
+    return True
+
+
+def list_runs(args) -> int:
+    import datetime
+    from crucible.store import Store
+
+    if not _require_db(args.db):
+        return 1
+    store = Store(args.db)
+    rows = store._conn.execute(
+        "SELECT id, started_at, task_root, model FROM runs ORDER BY id DESC LIMIT 50"
+    ).fetchall()
+    if not rows:
+        print("No runs found.")
+        return 0
+    print(f"{'ID':>4}  {'Started':>20}  {'Model':<30}  Task")
+    print("-" * 80)
+    for run_id, started_at, task_root, model in rows:
+        ts = datetime.datetime.fromtimestamp(started_at).strftime("%Y-%m-%d %H:%M:%S")
+        print(f"{run_id:>4}  {ts:>20}  {model:<30}  {task_root}")
+    return 0
+
+
+def show_reasoning(args) -> int:
+    import json
+    from crucible.store import Store
+
+    if not _require_db(args.db):
+        return 1
     store = Store(args.db)
     conn = store._conn
-    cursor = conn.cursor()
 
-    # Build query to fetch reasoning
+    # Resolve run_id: use provided value or fall back to latest run
+    run_id = args.run_id
+    if run_id is None:
+        row = conn.execute("SELECT id FROM runs ORDER BY id DESC LIMIT 1").fetchone()
+        if row is None:
+            print("No runs found in database.")
+            return 1
+        run_id = row[0]
+        print(f"(Using latest run: {run_id})")
+
     query = """
-        SELECT w.id as worker_id, w.idx, e.ordinal as episode, e.reasoning_json
+        SELECT w.idx, e.ordinal, e.reasoning_json
         FROM workers w
         JOIN episodes e ON w.id = e.worker_id
-        JOIN runs r ON w.run_id = r.id
-        WHERE r.id = ?
+        WHERE w.run_id = ?
     """
-    params = [args.run_id]
-
+    params: list[object] = [run_id]
     if args.worker is not None:
         query += " AND w.idx = ?"
         params.append(args.worker)
     if args.episode is not None:
         query += " AND e.ordinal = ?"
         params.append(args.episode)
-
     query += " ORDER BY w.idx, e.ordinal"
 
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
-
+    rows = conn.execute(query, params).fetchall()
     if not rows:
-        print(f"No reasoning found for run {args.run_id}")
-        if args.worker is not None:
-            print(f"Worker {args.worker}")
-        if args.episode is not None:
-            print(f"Episode {args.episode}")
+        print(f"No reasoning found for run {run_id}.")
         return 1
 
-    for worker_id, worker_idx, episode, reasoning_json in rows:
-        print(f"\n=== Worker {worker_idx} — Episode {episode} ===")
-        if reasoning_json:
-            try:
-                messages = json.loads(reasoning_json)
-                for i, msg in enumerate(messages):
-                    role = msg.get("role", "unknown")
-                    print(f"\n[{i}] {role}")
-                    if "content" in msg:
-                        content = msg["content"]
-                        if isinstance(content, str):
-                            print(content)
-                        elif isinstance(content, list):
-                            for item in content:
-                                if isinstance(item, dict):
-                                    if item.get("type") == "text":
-                                        print(item.get("text", ""))
-                                    elif item.get("type") == "tool_use":
-                                        print(f"Tool: {item.get('name')}({item.get('input', {})})")
-                                    elif item.get("type") == "tool_result":
-                                        print(f"Result: {item.get('content', '')}")
-                                elif hasattr(item, "__dict__"):
-                                    # Handle TextBlock and ToolUseBlock objects (from Anthropic SDK)
-                                    if hasattr(item, "text"):
-                                        print(item.text)
-                                    elif hasattr(item, "name"):
-                                        print(f"Tool: {item.name}({item.input})")
-                                else:
-                                    # Fallback to string representation
-                                    print(str(item))
-                        elif isinstance(content, dict):
-                            print(json.dumps(content, indent=2))
-                        else:
-                            print(str(content))
-                    elif "parts" in msg:
-                        # Handle Gemini's parts structure
-                        parts = msg["parts"]
-                        for part in parts:
-                            if isinstance(part, dict):
-                                if "text" in part:
-                                    print(part["text"])
-                                elif "function_call" in part:
-                                    fc = part["function_call"]
-                                    if isinstance(fc, dict):
-                                        print(f"Tool: {fc['name']}({fc['args']})")
-                                    elif hasattr(fc, "name") and hasattr(fc, "args"):
-                                        print(f"Tool: {fc.name}({fc.args})")
-                                    else:
-                                        print(f"Tool: {str(fc)}")
-                                elif "function_response" in part:
-                                    fr = part["function_response"]
-                                    if isinstance(fr, dict) and "response" in fr and "output" in fr["response"]:
-                                        print(f"Result: {fr['response']['output']}")
-                                    elif hasattr(fr, "response") and hasattr(fr.response, "get"):
-                                        print(f"Result: {fr.response.get('output', str(fr))}")
-                                    else:
-                                        print(f"Result: {str(fr)}")
-                            elif isinstance(part, str):
-                                print(part)
-                            elif hasattr(part, "__dict__"):
-                                if hasattr(part, "text"):
-                                    print(part.text)
-                                elif hasattr(part, "function_call"):
-                                    fc = part.function_call
-                                    if hasattr(fc, "name") and hasattr(fc, "args"):
-                                        print(f"Tool: {fc.name}({fc.args})")
-                                    else:
-                                        print(f"Tool: {str(fc)}")
-                                elif hasattr(part, "function_response"):
-                                    fr = part.function_response
-                                    if hasattr(fr, "response") and hasattr(fr.response, "get"):
-                                        print(f"Result: {fr.response.get('output', str(fr))}")
-                                    else:
-                                        print(f"Result: {str(fr)}")
-                            else:
-                                print(str(part))
-            except Exception as e:
-                print(f"Error parsing reasoning: {e}")
-                print(reasoning_json)
-        else:
-            print("No reasoning recorded")
+    for worker_idx, episode, reasoning_json in rows:
+        print(f"\n{'='*60}")
+        print(f"Worker {worker_idx} — Episode {episode}")
+        print("=" * 60)
+        if not reasoning_json:
+            print("(no reasoning recorded)")
+            continue
+        try:
+            messages = json.loads(reasoning_json)
+            for msg in messages:
+                _render_message(msg)
+        except Exception as exc:
+            print(f"(parse error: {exc})")
+            print(reasoning_json[:500])
 
     return 0
 
@@ -233,6 +248,8 @@ def main(argv: list[str] | None = None, run_fn: Callable[..., SearchResult] | No
             return 0
         print(f"UNSOLVED — best partial written to {out} (run {result.run_id})")
         return 2
+    elif args.command == "runs":
+        return list_runs(args)
     elif args.command == "reasoning":
         return show_reasoning(args)
 

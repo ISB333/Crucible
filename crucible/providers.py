@@ -6,6 +6,7 @@ OPENAI_BASE_URL) — never from code or config files.
 
 import json
 import os
+import time
 from collections.abc import Iterable, Sequence
 from typing import Any
 
@@ -101,10 +102,23 @@ class AnthropicSession:
             messages=self._messages,  # type: ignore[arg-type]
             tools=TOOL_SCHEMAS,  # type: ignore[arg-type]
         )
-        self._messages.append({"role": "assistant", "content": resp.content})
+        self._messages.append({"role": "assistant", "content": self._serialize_content(resp.content)})
         self._in_tokens += resp.usage.input_tokens
         self._out_tokens += resp.usage.output_tokens
         return extract_anthropic_calls(resp.content)
+
+    @staticmethod
+    def _serialize_content(blocks: Iterable[Any]) -> list[dict[str, Any]]:
+        result = []
+        for b in blocks:
+            t = getattr(b, "type", None)
+            if t == "text":
+                result.append({"type": "text", "text": b.text})
+            elif t == "tool_use":
+                result.append({"type": "tool_use", "id": b.id, "name": b.name, "input": dict(b.input)})
+            else:
+                result.append({"type": t or "unknown", "raw": str(b)})
+        return result
 
     @property
     def cost_usd(self) -> float:
@@ -194,21 +208,17 @@ class GeminiSession:
         return self._step()
 
     def reply(self, results: Sequence[ToolResult]) -> list[ToolCall]:
-        # Create function response parts for each tool result
         parts = []
         for r in results:
-            # Get the function name from the call ID
             function_name = self._call_id_to_name.get(r.call_id, "unknown")
-            # Create a FunctionResponse object with the tool result
             function_response = self._types.FunctionResponse(
                 id=r.call_id,
                 name=function_name,
                 response={"output": r.content},
             )
-            # Wrap the FunctionResponse in a Part object
-            part = self._types.Part(function_response=function_response)
-            parts.append(part)
-        self._history.append({"role": "model", "parts": parts})
+            parts.append(self._types.Part(function_response=function_response))
+        # Function responses must be "user" role — "model" causes a server disconnect
+        self._history.append({"role": "user", "parts": parts})
         return self._step()
 
     def _step(self) -> list[ToolCall]:
@@ -239,22 +249,29 @@ class GeminiSession:
             )
             function_declarations.append(fd)
 
-        # Call Gemini API
-        response = self._client.models.generate_content(
-            model=self._model,
-            contents=gemini_history,
-            config={
-                "max_output_tokens": self._max_tokens,
-                "tool_config": {
-                    "function_calling_config": {
-                        "mode": "auto",
+        # Call Gemini API — retry on transient network errors (disconnect, timeout)
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                response = self._client.models.generate_content(
+                    model=self._model,
+                    contents=gemini_history,
+                    config={
+                        "max_output_tokens": self._max_tokens,
+                        "tool_config": {"function_calling_config": {"mode": "auto"}},
+                        "tools": [self._types.Tool(function_declarations=function_declarations)],
                     },
-                },
-                "tools": [
-                    self._types.Tool(function_declarations=function_declarations)
-                ],
-            },
-        )
+                )
+                break
+            except Exception as exc:
+                msg = str(exc)
+                if any(t in msg for t in ("disconnected", "RemoteProtocol", "ConnectionError", "Timeout")):
+                    last_exc = exc
+                    time.sleep(2**attempt)
+                else:
+                    raise
+        else:
+            raise last_exc  # type: ignore[misc]
 
         # Extract tool calls
         calls = []
@@ -296,15 +313,15 @@ class GeminiSession:
             serialized_msg = {"role": msg["role"]}
             parts = []
             for part in msg["parts"]:
-                if hasattr(part, "text"):
-                    if part.text:
-                        parts.append({"text": part.text})
-                elif hasattr(part, "function_call"):
-                    fc = part.function_call
-                    parts.append({"function_call": {"name": fc.name, "args": fc.args, "id": fc.id}})
-                elif hasattr(part, "function_response"):
-                    fr = part.function_response
-                    parts.append({"function_response": {"name": fr.name, "response": fr.response, "id": fr.id}})
+                fc = getattr(part, "function_call", None)
+                fr = getattr(part, "function_response", None)
+                text = getattr(part, "text", None)
+                if fc is not None:
+                    parts.append({"function_call": {"name": fc.name, "args": dict(fc.args or {}), "id": fc.id}})
+                elif fr is not None:
+                    parts.append({"function_response": {"name": fr.name, "response": dict(fr.response or {}), "id": fr.id}})
+                elif text:
+                    parts.append({"text": text})
                 elif isinstance(part, dict):
                     # Filter out None values
                     filtered_part = {k: v for k, v in part.items() if v is not None}

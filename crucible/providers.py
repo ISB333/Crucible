@@ -4,8 +4,10 @@ Secrets come from the environment only (ANTHROPIC_API_KEY / OPENAI_API_KEY /
 OPENAI_BASE_URL) — never from code or config files.
 """
 
+import hashlib
 import json
 import os
+import re
 import time
 from collections.abc import Iterable, Sequence
 from typing import Any, Protocol, runtime_checkable
@@ -36,6 +38,47 @@ def extract_anthropic_calls(content_blocks: Iterable[Any]) -> list[ToolCall]:
         for b in content_blocks
         if getattr(b, "type", None) == "tool_use"
     ]
+
+
+_JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
+
+
+def extract_text_tool_calls(content: str) -> list[ToolCall]:
+    """Fallback for local models (common behind Ollama) that emit a tool call as JSON
+    text instead of a native ``tool_calls`` entry. Only used when the provider returned
+    no structured calls. Recognizes ``{"name", "arguments"|"parameters"}`` optionally
+    wrapped in a ```json fence; returns [] for plain prose so well-behaved models are
+    unaffected. Validate model output before acting on it (Ananke #10)."""
+    if not content or '"name"' not in content:
+        return []
+    text = content.strip()
+    if text.startswith("```"):  # unwrap a ```json ... ``` fence
+        lines = text.splitlines()[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    candidates = [text]
+    m = _JSON_OBJECT.search(text)
+    if m and m.group(0) != text:
+        candidates.append(m.group(0))
+    for cand in candidates:
+        try:
+            obj = json.loads(cand)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(obj, dict):
+            continue
+        name = obj.get("name")
+        args = obj.get("arguments", obj.get("parameters", {}))
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except (json.JSONDecodeError, ValueError):
+                args = {}
+        if isinstance(name, str) and isinstance(args, dict):
+            cid = "text-" + hashlib.sha1(cand.encode()).hexdigest()[:8]
+            return [ToolCall(id=cid, name=name, args=args)]
+    return []
 
 
 def extract_openai_calls(message: Any) -> list[ToolCall]:
@@ -174,11 +217,33 @@ class OpenAICompatSession:
             tools=to_openai_tools(self._tools),  # type: ignore[arg-type]
         )
         msg = resp.choices[0].message
-        self._messages.append(msg.model_dump(exclude_none=True))
         if resp.usage is not None:
             self._in_tokens += resp.usage.prompt_tokens
             self._out_tokens += resp.usage.completion_tokens
-        return extract_openai_calls(msg)
+        calls = extract_openai_calls(msg)
+        if not calls and msg.content:
+            # Fallback: small local models emit the call as JSON text, not a native
+            # tool_call. Synthesize a proper tool_calls message so the follow-up tool
+            # results reference valid ids.
+            text_calls = extract_text_tool_calls(msg.content)
+            if text_calls:
+                self._messages.append(
+                    {
+                        "role": "assistant",
+                        "content": msg.content,
+                        "tool_calls": [
+                            {
+                                "id": c.id,
+                                "type": "function",
+                                "function": {"name": c.name, "arguments": json.dumps(c.args)},
+                            }
+                            for c in text_calls
+                        ],
+                    }
+                )
+                return text_calls
+        self._messages.append(msg.model_dump(exclude_none=True))
+        return calls
 
     @property
     def cost_usd(self) -> float:

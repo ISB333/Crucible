@@ -31,6 +31,7 @@ try:
 except ImportError:
     pass
 
+from crucible.advisor import Advisor, AdvisorPolicy
 from crucible.artifact import Artifact
 from crucible.budgets import EpisodeBudget, RunBudget, budgets
 from crucible.llm import LLMSession
@@ -42,7 +43,7 @@ from crucible.task import Task
 from crucible.verify import Verifier
 
 __version__ = "0.0.1"
-__all__ = ["Artifact", "Result", "Task", "budgets", "run", "__version__"]
+__all__ = ["Artifact", "Result", "Task", "AdvisorPolicy", "budgets", "run", "__version__"]
 
 
 def run(
@@ -58,6 +59,7 @@ def run(
     base_url: str | None = None,  # OpenAI-compatible endpoint for local models
     db: str | Path = "crucible.db",
     session_factory: Callable[[int, int], LLMSession] | None = None,  # test seam
+    advisor: str | AdvisorPolicy | None = None,  # LLM shepherding: model name or policy
 ) -> Result:
     """Run a verifier-grounded multi-agent search (PRD §9).
 
@@ -65,6 +67,11 @@ def run(
     - ``verifier.deterministic`` is False (advisory-only verifier cannot be the
       sole accept signal in v0 — PRD §3).
     - ``sandbox`` is not ``"docker"`` or ``"subprocess"``.
+
+    Args:
+        advisor: Optional LLM shepherding config. If str, interpreted as model name
+            with default policy (max_calls_per_episode=1, plateau_trigger=True, fail_streak=3).
+            If AdvisorPolicy, used as-is. If None (default), advisor is disabled.
     """
     if not verifier.deterministic:
         raise ValueError(
@@ -86,6 +93,23 @@ def run(
 
     else:
         raise ValueError(f"unknown sandbox kind {sandbox!r}; use 'docker' or 'subprocess'")
+
+    # Normalize advisor config
+    advisor_policy: AdvisorPolicy | None = None
+    if isinstance(advisor, str):
+        advisor_policy = AdvisorPolicy(model=advisor)
+    elif isinstance(advisor, AdvisorPolicy):
+        advisor_policy = advisor
+    elif advisor is not None:
+        raise ValueError(f"advisor must be str, AdvisorPolicy, or None, got {type(advisor).__name__}")
+
+    # Build advisor factory if policy is set
+    advisor_factory: Callable[[], Advisor] | None = None
+    if advisor_policy is not None:
+        def _adv_factory(_pol=advisor_policy, _bu=base_url) -> Advisor:
+            from crucible.advisor import LLMAdvisor
+            return LLMAdvisor(policy=_pol, base_url=_bu)
+        advisor_factory = _adv_factory
 
     sf: Callable[[int, int], LLMSession]
     if session_factory is not None:
@@ -111,4 +135,6 @@ def run(
         workers=workers,
         episode_budget=episode,
         run_budget=run_budget,
+        advisor_factory=advisor_factory,
+        advisor_policy=advisor_policy,
     )

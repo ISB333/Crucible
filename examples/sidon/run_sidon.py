@@ -33,13 +33,15 @@ def _default_model() -> str:
     return "claude-sonnet-4-6"  # will produce a clear auth error from the SDK
 
 
-def _check_key(model: str) -> None:
+def _check_key(model: str, base_url: str | None = None) -> None:
     if model.startswith("claude") and not os.environ.get("ANTHROPIC_API_KEY"):
         sys.exit("Error: ANTHROPIC_API_KEY not set. Add it to .env or export it.")
     if model.startswith("gemini") and not (
         os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
     ):
         sys.exit("Error: GOOGLE_API_KEY (or GEMINI_API_KEY) not set. Add it to .env or export it.")
+    if model.startswith("ollama/") or (base_url and "localhost" in base_url):
+        return  # Ollama/local models don't need an API key
     if not model.startswith(("claude", "gemini")) and not os.environ.get("OPENAI_API_KEY"):
         sys.exit("Error: OPENAI_API_KEY not set. Add it to .env or export it.")
 
@@ -58,12 +60,13 @@ parser.add_argument(
     default="subprocess",
     help="subprocess: no Docker needed (safe for stdlib-only code)",
 )
+parser.add_argument("--base-url", default=None, help="OpenAI-compatible base URL (e.g. http://localhost:11434/v1 for Ollama)")
 parser.add_argument("--advisor", default=None, help="advisor model for LLM shepherding (e.g. claude-opus-4-8)")
 parser.add_argument("--advisor-max-calls", type=int, default=None, help="max advisor calls per run")
 parser.add_argument("--advisor-fail-streak", type=int, default=3, help="trigger advisor after N non-improving episodes")
 args = parser.parse_args()
 
-_check_key(args.model)
+_check_key(args.model, args.base_url)
 print(f"Model: {args.model}  |  Workers: {args.workers}  |  Target: {args.target}")
 
 # Build advisor policy if --advisor is specified
@@ -84,6 +87,7 @@ result = run(
     run_budget=RunBudget(episodes_per_worker=10, plateau_patience=3),
     sandbox=args.sandbox,
     db=str(SCRIPT_DIR / "sidon.db"),
+    base_url=args.base_url,
     advisor=advisor,
 )
 

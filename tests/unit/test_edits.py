@@ -85,3 +85,19 @@ def test_write_region_replaces_whole_body() -> None:
 def test_write_region_unknown_name_rejected() -> None:
     r = write_region(make(), "nope", "x")
     assert not r.applied
+
+
+def test_write_region_strips_wrapping_code_fence() -> None:
+    fenced = "```python\ndef solve() -> int:\n    return 42\n```"
+    r = write_region(make(), "solution", fenced)
+    assert r.applied
+    body = r.artifact.files["problem.py"]
+    assert "```" not in body
+    assert "def solve() -> int:\n    return 42" in body
+
+
+def test_write_region_leaves_unfenced_code_untouched() -> None:
+    code = "def solve() -> int:\n    return 42  # no fence"
+    r = write_region(make(), "solution", code)
+    assert r.applied
+    assert "return 42  # no fence" in r.artifact.files["problem.py"]

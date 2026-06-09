@@ -43,7 +43,23 @@ def search_replace(a: Artifact, file: str, old: str, new: str) -> EditResult:
     return EditResult(Artifact.from_files(files, parent_hash=a.content_hash), True)
 
 
+def unwrap_code_fence(content: str) -> str:
+    """Strip a wrapping markdown code fence (```lang ... ```) if the model added one.
+    Small/instruct models often wrap whole-region content in fences, which would be
+    written into the artifact verbatim and break the verifier. Only triggers when the
+    content *starts* with a fence, so genuine code is left untouched."""
+    stripped = content.strip()
+    if not stripped.startswith("```"):
+        return content
+    lines = stripped.splitlines()
+    lines = lines[1:]  # drop the opening ``` / ```python line
+    if lines and lines[-1].strip().startswith("```"):
+        lines = lines[:-1]  # drop the closing fence if present
+    return "\n".join(lines)
+
+
 def write_region(a: Artifact, name: str, content: str) -> EditResult:
+    content = unwrap_code_fence(content)
     if MARKER_TOKEN in content:
         return EditResult(a, False, "edits may not touch region markers — rejected")
     try:

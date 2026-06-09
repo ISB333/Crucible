@@ -275,6 +275,8 @@ def run_worker(
     integrity: IntegrityCheck,
     cancel: threading.Event,
     started_at: float,
+    advisor_factory: "Callable[[], Advisor] | None" = None,
+    advisor_policy: "AdvisorPolicy | None" = None,
 ) -> WorkerResult:
     """One independent Ralph loop. Standalone callable by design: this is the seam
     P1.3 plugs into the reactor's _transform in v2."""
@@ -285,6 +287,12 @@ def run_worker(
     stale = 0
     cost = 0.0
     episodes = 0
+    advisor = advisor_factory() if advisor_factory is not None else None
+    run_calls_left = (
+        advisor_policy.max_calls_per_run
+        if advisor_policy is not None and advisor_policy.max_calls_per_run is not None
+        else None
+    )
     for ordinal in range(run_budget.episodes_per_worker):
         if cancel.is_set():
             break
@@ -293,7 +301,24 @@ def run_worker(
         if run_budget.usd is not None and cost >= run_budget.usd:
             break
         t0 = time.time()
-        out, session = run_episode(artifact, verifier, ctx, new_session(ordinal), episode_budget, integrity)
+        # Compute per-episode cap: min of episode cap and remaining run cap
+        if advisor is not None and advisor_policy is not None:
+            cap = advisor_policy.max_calls_per_episode or 0
+            if run_calls_left is not None:
+                cap = min(cap, run_calls_left)
+        else:
+            cap = 0
+        out, session = run_episode(
+            artifact,
+            verifier,
+            ctx,
+            new_session(ordinal),
+            episode_budget,
+            integrity,
+            advisor=advisor,
+            policy=advisor_policy,
+            advisor_cap=cap,
+        )
         episodes += 1
         cost += out.cost_usd
         # Capture and store LLM reasoning
@@ -319,6 +344,12 @@ def run_worker(
             score=score,
         )
         store.add_verdict(av_id, out.final_verdict)
+        # Record advisor consult events for provenance
+        for rec in out.advisor_records:
+            store.add_event(run_id, "advisor_consult", rec)
+        # Decrement run cap after each episode
+        if run_calls_left is not None:
+            run_calls_left = max(0, run_calls_left - out.advisor_calls)
         if out.solved:
             return WorkerResult(index, out.artifact, out.artifact, episodes, cost, (3, 0.0))
         rank = outcome_rank(out)

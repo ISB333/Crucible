@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from crucible.artifact import Artifact
+from crucible.advisor import Advisor, AdvisorPolicy
 from crucible.budgets import EpisodeBudget, RunBudget
 from crucible.integrity import Composite, DenyTokens, ImmutableRegions, fresh_reverify
 from crucible.llm import LLMSession
@@ -48,6 +49,8 @@ async def search(
     workers: int = 10,
     episode_budget: EpisodeBudget | None = None,
     run_budget: RunBudget | None = None,
+    advisor_factory: "Callable[[], Advisor] | None" = None,
+    advisor_policy: "AdvisorPolicy | None" = None,
 ) -> SearchResult:
     if workers < 1:
         raise ValueError(f"workers must be >= 1, got {workers}")
@@ -70,6 +73,17 @@ async def search(
                 "episodes_per_worker": rb.episodes_per_worker,
                 "plateau_patience": rb.plateau_patience,
             },
+            "advisor": (
+                None
+                if advisor_policy is None
+                else {
+                    "model": advisor_policy.model,
+                    "max_calls_per_episode": advisor_policy.max_calls_per_episode,
+                    "max_calls_per_run": advisor_policy.max_calls_per_run,
+                    "plateau_trigger": advisor_policy.plateau_trigger,
+                    "fail_streak": advisor_policy.fail_streak,
+                }
+            ),
         },
     )
     cancel = threading.Event()
@@ -91,6 +105,8 @@ async def search(
             integrity=integrity,
             cancel=cancel,
             started_at=started_at,
+            advisor_factory=advisor_factory,
+            advisor_policy=advisor_policy,
         )
 
     tasks = [asyncio.create_task(asyncio.to_thread(one, i)) for i in range(workers)]

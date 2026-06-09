@@ -1,3 +1,4 @@
+import json
 import threading
 import time
 from pathlib import Path
@@ -188,3 +189,44 @@ def test_off_by_default_no_consult(make_ctx) -> None:
     out = _episode(make_ctx, [[consult("stuck")], []])  # advisor=None, cap=0
     assert out.advisor_calls == 0
     assert out.advisor_records == ()
+
+
+def test_advisor_consult_event_recorded(tmp_path, make_ctx) -> None:
+    """Task 5: verify advisor consults are stored as events in SQLite."""
+    adv = ScriptedAdvisor(advice=["try returning 42"], cost_per_call=0.01)
+    pol = AdvisorPolicy(model="x", max_calls_per_episode=1, max_calls_per_run=2)
+    a = Artifact.from_files({"problem.py": PROBLEM})
+    integrity = Composite(checks=(ImmutableRegions.freeze(a), DenyTokens()))
+    sessions = [ScriptedSession([[consult("stuck")], [wr(SOLUTION)]])]
+    store = Store(tmp_path / "t.db")
+    run_id = store.start_run(task_root="/t", verifier_id="stub", model="scripted", config={})
+    result = run_worker(
+        initial=a,
+        verifier=StubVerifier(),
+        ctx=make_ctx(),
+        new_session=lambda ordinal: sessions[ordinal],
+        store=store,
+        run_id=run_id,
+        index=0,
+        episode_budget=EpisodeBudget(),
+        run_budget=RunBudget(episodes_per_worker=1),
+        integrity=integrity,
+        cancel=threading.Event(),
+        started_at=time.time(),
+        advisor_factory=lambda: adv,
+        advisor_policy=pol,
+    )
+    assert result.solution is not None
+    assert result.episodes == 1
+    # Check advisor consult event was recorded by querying events table directly
+    events = store._conn.execute(
+        "SELECT kind, payload_json FROM events WHERE run_id = ? ORDER BY id",
+        (run_id,)
+    ).fetchall()
+    advisor_events = [(k, json.loads(p)) for k, p in events if k == "advisor_consult"]
+    assert len(advisor_events) == 1
+    payload = advisor_events[0][1]
+    assert payload["trigger"] == "self"
+    assert payload["advice"] == "try returning 42"
+    assert payload["cost_usd"] == pytest.approx(0.01)
+    assert payload["ok"] is True

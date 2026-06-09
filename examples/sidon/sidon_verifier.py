@@ -31,7 +31,7 @@ class SidonVerifier:
             "print(json.dumps(generate_sidon_set()))"
         )
         res = ctx.sandbox.run(
-            ["python", "-c", inline],
+            ["python3", "-c", inline],
             cwd=ws,
             timeout_s=self.timeout_s,
             network=ctx.task.network,

@@ -138,7 +138,16 @@ class OpenAICompatSession:
     def __init__(self, model: str, base_url: str | None = None, extra_tools: Sequence[dict[str, Any]] = ()) -> None:
         from openai import OpenAI  # optional extra: crucible[openai]
 
-        self._client = OpenAI(base_url=base_url or os.environ.get("OPENAI_BASE_URL"))
+        # For local models (Ollama), use empty string as API key
+        base_url = base_url or os.environ.get("OPENAI_BASE_URL")
+
+        # Use explicit empty string for Ollama/local models, or env var if set
+        if base_url and "localhost" in base_url:
+            api_key = "ollama"  # Any non-empty string works for Ollama
+        else:
+            api_key = os.environ.get("OPENAI_API_KEY", "ollama")
+
+        self._client = OpenAI(base_url=base_url, api_key=api_key, max_retries=2)
         self._model_name = model
         self._model = model
         self._tools = [*TOOL_SCHEMAS, *extra_tools]

@@ -4,12 +4,13 @@ from pathlib import Path
 
 import pytest
 
+from crucible.advisor import AdvisorPolicy, ScriptedAdvisor
 from crucible.artifact import Artifact
 from crucible.budgets import EpisodeBudget, RunBudget
 from crucible.integrity import Composite, DenyTokens, ImmutableRegions
 from crucible.llm import ScriptedSession, ToolCall
 from crucible.store import Store
-from crucible.worker import annotate_lessons, run_worker
+from crucible.worker import annotate_lessons, run_episode, run_worker
 from tests.unit.conftest import StubVerifier
 
 pytestmark = pytest.mark.unit
@@ -128,3 +129,62 @@ def test_annotate_lessons_sanitizes_hole_tokens(make_ctx) -> None:
     solved = a.replace_region("solution", "def solve() -> int:\n    return 42")
     b = annotate_lessons(solved, 0, "removed raise NotImplementedError and the crucible:hole stub")
     assert scan_holes(b) == ()  # lesson text must not create phantom holes
+
+
+# --- advisor consult tests (Task 4) ---
+
+def consult(question: str) -> ToolCall:
+    return ToolCall(id="9", name="consult_advisor", args={"question": question})
+
+
+def _episode(make_ctx, script, advisor=None, policy=None, cap=0):
+    from crucible.budgets import EpisodeBudget
+    from crucible.integrity import Composite, DenyTokens, ImmutableRegions
+    from crucible.verify import RunContext
+
+    a = Artifact.from_files({"problem.py": PROBLEM})
+    integrity = Composite(checks=(ImmutableRegions.freeze(a), DenyTokens()))
+    out, _ = run_episode(
+        a, StubVerifier(), make_ctx(), ScriptedSession(script),
+        EpisodeBudget(), integrity, advisor=advisor, policy=policy, advisor_cap=cap,
+    )
+    return out
+
+
+def test_self_trigger_returns_advice_to_worker(make_ctx) -> None:
+    adv = ScriptedAdvisor(advice=["try returning 42"], cost_per_call=0.01)
+    pol = AdvisorPolicy(model="x", max_calls_per_episode=1)
+    # turn 1: ask advisor; turn 2: apply; then stop
+    out = _episode(make_ctx, [[consult("stuck")], [wr(SOLUTION)]], advisor=adv, policy=pol, cap=1)
+    assert out.advisor_calls == 1
+    assert out.advisor_cost_usd == pytest.approx(0.01)
+    assert any(r["trigger"] == "self" for r in out.advisor_records)
+    assert out.solved is True
+
+
+def test_advisor_cap_blocks_extra_self_calls(make_ctx) -> None:
+    adv = ScriptedAdvisor(advice=["a", "b"], cost_per_call=0.01)
+    pol = AdvisorPolicy(model="x", max_calls_per_episode=1)
+    out = _episode(make_ctx, [[consult("q1")], [consult("q2")], []], advisor=adv, policy=pol, cap=1)
+    assert out.advisor_calls == 1  # second consult refused by the cap
+
+
+def test_engine_trigger_on_fail_streak(make_ctx) -> None:
+    # StubVerifier returns Partial when holes remain; edits that still have holes
+    # keep returning Partial (same rank), triggering fail_streak=2 after 2 non-improving edits.
+    adv = ScriptedAdvisor(advice=["hint"], cost_per_call=0.02)
+    pol = AdvisorPolicy(model="x", max_calls_per_episode=1, fail_streak=2)
+    bad = ToolCall(
+        id="3",
+        name="write_region",
+        args={"name": "solution", "content": "def solve() -> int:\n    raise NotImplementedError  # still wrong"},
+    )
+    out = _episode(make_ctx, [[bad], [bad], []], advisor=adv, policy=pol, cap=1)
+    assert out.advisor_calls == 1
+    assert any(r["trigger"] == "engine" for r in out.advisor_records)
+
+
+def test_off_by_default_no_consult(make_ctx) -> None:
+    out = _episode(make_ctx, [[consult("stuck")], []])  # advisor=None, cap=0
+    assert out.advisor_calls == 0
+    assert out.advisor_records == ()

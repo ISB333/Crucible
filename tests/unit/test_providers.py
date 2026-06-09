@@ -48,3 +48,22 @@ def test_to_openai_tools_wraps_schemas() -> None:
     assert tools[0]["type"] == "function"
     assert tools[0]["function"]["name"] == "search_replace"
     assert "parameters" in tools[0]["function"]
+
+
+def test_to_openai_tools_includes_extra() -> None:
+    from crucible.llm import CONSULT_ADVISOR_SCHEMA, TOOL_SCHEMAS
+
+    base = to_openai_tools()
+    assert len(base) == len(TOOL_SCHEMAS)
+    extended = to_openai_tools(TOOL_SCHEMAS + [CONSULT_ADVISOR_SCHEMA])
+    names = [t["function"]["name"] for t in extended]
+    assert "consult_advisor" in names
+    assert len(extended) == len(TOOL_SCHEMAS) + 1
+
+
+def test_consult_advisor_schema_shape() -> None:
+    from crucible.llm import CONSULT_ADVISOR_SCHEMA
+
+    assert CONSULT_ADVISOR_SCHEMA["name"] == "consult_advisor"
+    assert "question" in CONSULT_ADVISOR_SCHEMA["input_schema"]["properties"]
+    assert CONSULT_ADVISOR_SCHEMA["input_schema"]["required"] == ["question"]

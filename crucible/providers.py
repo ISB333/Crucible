@@ -50,7 +50,7 @@ def extract_openai_calls(message: Any) -> list[ToolCall]:
     return calls
 
 
-def to_openai_tools() -> list[dict[str, Any]]:
+def to_openai_tools(tools: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     return [
         {
             "type": "function",
@@ -60,18 +60,19 @@ def to_openai_tools() -> list[dict[str, Any]]:
                 "parameters": t["input_schema"],
             },
         }
-        for t in TOOL_SCHEMAS
+        for t in (tools if tools is not None else TOOL_SCHEMAS)
     ]
 
 
 class AnthropicSession:
-    def __init__(self, model: str, max_tokens: int = 4096) -> None:
+    def __init__(self, model: str, max_tokens: int = 4096, extra_tools: Sequence[dict[str, Any]] = ()) -> None:
         import anthropic  # optional extra: crucible[anthropic]
 
         self._client = anthropic.Anthropic()  # key from ANTHROPIC_API_KEY
         self._model_name = model
         self._model = model
         self._max_tokens = max_tokens
+        self._tools = [*TOOL_SCHEMAS, *extra_tools]
         self._system = ""
         self._messages: list[dict[str, Any]] = []
         self._in_tokens = 0
@@ -100,7 +101,7 @@ class AnthropicSession:
             max_tokens=self._max_tokens,
             system=self._system,
             messages=self._messages,  # type: ignore[arg-type]
-            tools=TOOL_SCHEMAS,  # type: ignore[arg-type]
+            tools=self._tools,  # type: ignore[arg-type]
         )
         self._messages.append({"role": "assistant", "content": self._serialize_content(resp.content)})
         self._in_tokens += resp.usage.input_tokens
@@ -134,12 +135,13 @@ class AnthropicSession:
 class OpenAICompatSession:
     """OpenAI or any OpenAI-compatible endpoint (set OPENAI_BASE_URL for local models)."""
 
-    def __init__(self, model: str, base_url: str | None = None) -> None:
+    def __init__(self, model: str, base_url: str | None = None, extra_tools: Sequence[dict[str, Any]] = ()) -> None:
         from openai import OpenAI  # optional extra: crucible[openai]
 
         self._client = OpenAI(base_url=base_url or os.environ.get("OPENAI_BASE_URL"))
         self._model_name = model
         self._model = model
+        self._tools = [*TOOL_SCHEMAS, *extra_tools]
         self._messages: list[dict[str, Any]] = []
         self._in_tokens = 0
         self._out_tokens = 0
@@ -160,7 +162,7 @@ class OpenAICompatSession:
         resp = self._client.chat.completions.create(
             model=self._model,
             messages=self._messages,  # type: ignore[arg-type]
-            tools=to_openai_tools(),  # type: ignore[arg-type]
+            tools=to_openai_tools(self._tools),  # type: ignore[arg-type]
         )
         msg = resp.choices[0].message
         self._messages.append(msg.model_dump(exclude_none=True))
@@ -183,7 +185,7 @@ class OpenAICompatSession:
 class GeminiSession:
     """Google Gemini API session (requires GOOGLE_API_KEY or GEMINI_API_KEY)."""
 
-    def __init__(self, model: str, max_tokens: int = 4096) -> None:
+    def __init__(self, model: str, max_tokens: int = 4096, extra_tools: Sequence[dict[str, Any]] = ()) -> None:
         import google.genai as genai  # optional extra: crucible[gemini]
         import google.genai.types as types  # type: ignore[reportMissingImports]
         # type: ignore[reportMissingImports]
@@ -195,6 +197,7 @@ class GeminiSession:
         self._model_name = model
         self._model = model
         self._max_tokens = max_tokens
+        self._tools = [*TOOL_SCHEMAS, *extra_tools]
         self._system = ""
         self._history: list[dict[str, Any]] = []
         self._in_tokens = 0
@@ -241,7 +244,7 @@ class GeminiSession:
 
         # Convert TOOL_SCHEMAS to Gemini format (input_schema -> parameters_json_schema)
         function_declarations = []
-        for tool in TOOL_SCHEMAS:
+        for tool in self._tools:
             fd = self._types.FunctionDeclaration(
                 name=tool["name"],
                 description=tool["description"],
@@ -334,9 +337,9 @@ class GeminiSession:
         return serialized
 
 
-def make_session(model: str, base_url: str | None = None) -> LLMSession:
+def make_session(model: str, base_url: str | None = None, extra_tools: Sequence[dict[str, Any]] = ()) -> LLMSession:
     if model.startswith("claude"):
-        return AnthropicSession(model)
+        return AnthropicSession(model, extra_tools=extra_tools)
     if model.startswith("gemini"):
-        return GeminiSession(model)
-    return OpenAICompatSession(model, base_url=base_url)
+        return GeminiSession(model, extra_tools=extra_tools)
+    return OpenAICompatSession(model, base_url=base_url, extra_tools=extra_tools)

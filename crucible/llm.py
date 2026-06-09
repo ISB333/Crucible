@@ -75,6 +75,22 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     },
 ]
 
+CONSULT_ADVISOR_SCHEMA: dict[str, Any] = {
+    "name": "consult_advisor",
+    "description": (
+        "Ask a stronger advisor model for guidance when you are stuck or unsure."
+        " Use it sparingly, only at genuinely hard steps. The advisor returns TEXT"
+        " advice only; you must still make any change yourself with the edit tools."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "question": {"type": "string", "description": "What you are stuck on."}
+        },
+        "required": ["question"],
+    },
+}
+
 
 @dataclass
 class ScriptedSession:

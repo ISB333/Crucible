@@ -8,7 +8,7 @@ import json
 import os
 import time
 from collections.abc import Iterable, Sequence
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from crucible.llm import TOOL_SCHEMAS, LLMSession, ToolCall, ToolResult
 
@@ -343,3 +343,97 @@ def make_session(model: str, base_url: str | None = None, extra_tools: Sequence[
     if model.startswith("gemini"):
         return GeminiSession(model, extra_tools=extra_tools)
     return OpenAICompatSession(model, base_url=base_url, extra_tools=extra_tools)
+
+
+@runtime_checkable
+class AdvisorSession(Protocol):
+    def complete(self, system: str, user: str) -> str: ...
+    @property
+    def cost_usd(self) -> float: ...
+
+
+class _AnthropicAdvisor:
+    def __init__(self, model: str, max_tokens: int = 1024) -> None:
+        import anthropic
+
+        self._client = anthropic.Anthropic()
+        self._model = model
+        self._max_tokens = max_tokens
+        self._in = 0
+        self._out = 0
+
+    def complete(self, system: str, user: str) -> str:
+        resp = self._client.messages.create(
+            model=self._model, max_tokens=self._max_tokens, system=system,
+            messages=[{"role": "user", "content": user}],
+        )
+        self._in += resp.usage.input_tokens
+        self._out += resp.usage.output_tokens
+        return "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
+
+    @property
+    def cost_usd(self) -> float:
+        pin, pout = price_for(self._model)
+        return (self._in * pin + self._out * pout) / 1_000_000
+
+
+class _OpenAIAdvisor:
+    def __init__(self, model: str, base_url: str | None = None) -> None:
+        from openai import OpenAI
+
+        self._client = OpenAI(base_url=base_url or os.environ.get("OPENAI_BASE_URL"))
+        self._model = model
+        self._in = 0
+        self._out = 0
+
+    def complete(self, system: str, user: str) -> str:
+        resp = self._client.chat.completions.create(
+            model=self._model,
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+        )
+        if resp.usage is not None:
+            self._in += resp.usage.prompt_tokens
+            self._out += resp.usage.completion_tokens
+        return resp.choices[0].message.content or ""
+
+    @property
+    def cost_usd(self) -> float:
+        pin, pout = price_for(self._model)
+        return (self._in * pin + self._out * pout) / 1_000_000
+
+
+class _GeminiAdvisor:
+    def __init__(self, model: str, max_tokens: int = 1024) -> None:
+        import google.genai as genai
+        import google.genai.types as types  # type: ignore[reportMissingImports]
+
+        api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            raise ValueError("GOOGLE_API_KEY or GEMINI_API_KEY must be set in environment")
+        self._client = genai.Client(api_key=api_key)  # type: ignore[reportPrivateImportUsage]
+        self._model = model
+        self._max_tokens = max_tokens
+        self._types = types
+        self._in = 0
+        self._out = 0
+
+    def complete(self, system: str, user: str) -> str:
+        resp = self._client.models.generate_content(
+            model=self._model,
+            contents=[self._types.Content(role="user", parts=[self._types.Part(text=user)])],
+            config={"max_output_tokens": self._max_tokens, "system_instruction": system},
+        )
+        return getattr(resp, "text", "") or ""
+
+    @property
+    def cost_usd(self) -> float:
+        pin, pout = price_for(self._model)
+        return (self._in * pin + self._out * pout) / 1_000_000
+
+
+def make_advisor_session(model: str, base_url: str | None = None) -> AdvisorSession:
+    if model.startswith("claude"):
+        return _AnthropicAdvisor(model)
+    if model.startswith("gemini"):
+        return _GeminiAdvisor(model)
+    return _OpenAIAdvisor(model, base_url=base_url)

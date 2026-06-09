@@ -316,6 +316,76 @@ uv run crucible reasoning --db examples/sidon/sidon.db
 ```
 
 
+## LLM Shepherding (optional)
+
+Crucible supports optional **LLM shepherding** — weaker coding agents can consult a stronger "advisor" model when stuck. This is useful when you want to use a fast, cheap model for the bulk of the search but escalate tough blockers to a stronger model.
+
+**How it works:**
+
+- **Self-trigger**: The worker explicitly calls `consult_advisor` when it recognizes it's stuck.
+- **Engine-trigger**: The system automatically triggers the advisor after `fail_streak` non-improving episodes (plateau detection).
+- **Caps**: Configurable limits on advisor calls per episode and per run prevent over-reliance.
+- **Provenance**: All advisor consultations are recorded as `advisor_consult` events in SQLite.
+
+### SDK usage
+
+```python
+from crucible import AdvisorPolicy, Task, run, budgets
+
+# String shorthand (default policy: 1 call/episode, plateau_trigger=True, fail_streak=3)
+result = run(
+    task=Task.from_path("problem.py", editable=["solution"]),
+    verifier=...,
+    model="claude-sonnet-4-6",  # worker model
+    advisor="claude-opus-4-8",  # advisor model
+)
+
+# Full policy control
+result = run(
+    task=Task.from_path("problem.py", editable=["solution"]),
+    verifier=...,
+    model="claude-sonnet-4-6",
+    advisor=AdvisorPolicy(
+        model="claude-opus-4-8",
+        max_calls_per_episode=1,
+        max_calls_per_run=5,
+        plateau_trigger=True,
+        fail_streak=3,  # trigger advisor after 3 non-improving episodes
+        scope="suggestions",  # "suggestions" | "steering"
+    ),
+)
+```
+
+### CLI usage
+
+```bash
+# Enable advisor with default policy
+crucible run problem.py --editable solution --verifier pytest:tests/ \
+    --advisor claude-opus-4-8
+
+# Full control over advisor policy
+crucible run problem.py --editable solution --verifier pytest:tests/ \
+    --advisor claude-opus-4-8 \
+    --advisor-max-calls 5 \
+    --advisor-fail-streak 4
+```
+
+### Example scripts
+
+The example scripts support advisor passthrough:
+
+```bash
+# Sidon with advisor
+uv run python examples/sidon/run_sidon.py --advisor claude-opus-4-8
+
+# Chemistry with advisor
+uv run python examples/chem/run_chem.py --advisor claude-opus-4-8
+```
+
+### Graceful degradation
+
+If the advisor is unavailable (network error, missing API key, rate limit), the system degrades gracefully: the worker receives `"(advisor unavailable — proceed on your own)"` and continues. Advisor failures are logged but do not fail the run.
+
 ## Inspecting reasoning
 
 Every episode's full conversation — the model's text reasoning, each tool call, and the verifier feedback returned after each edit — is captured automatically in the `reasoning_json` column of the `episodes` table (all providers: Anthropic, OpenAI, Gemini). It lives in the same append-only SQLite store as the rest of the provenance, so any run is replayable after the fact.

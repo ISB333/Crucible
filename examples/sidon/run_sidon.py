@@ -44,7 +44,7 @@ def _check_key(model: str) -> None:
         sys.exit("Error: OPENAI_API_KEY not set. Add it to .env or export it.")
 
 
-from crucible import Task, budgets, run  # noqa: E402
+from crucible import AdvisorPolicy, Task, budgets, run  # noqa: E402
 from crucible.budgets import RunBudget  # noqa: E402
 from sidon_verifier import SidonVerifier  # type: ignore[import-not-found]  # noqa: E402
 
@@ -58,10 +58,22 @@ parser.add_argument(
     default="subprocess",
     help="subprocess: no Docker needed (safe for stdlib-only code)",
 )
+parser.add_argument("--advisor", default=None, help="advisor model for LLM shepherding (e.g. claude-opus-4-8)")
+parser.add_argument("--advisor-max-calls", type=int, default=None, help="max advisor calls per run")
+parser.add_argument("--advisor-fail-streak", type=int, default=3, help="trigger advisor after N non-improving episodes")
 args = parser.parse_args()
 
 _check_key(args.model)
 print(f"Model: {args.model}  |  Workers: {args.workers}  |  Target: {args.target}")
+
+# Build advisor policy if --advisor is specified
+advisor = None
+if args.advisor is not None:
+    advisor = AdvisorPolicy(
+        model=args.advisor,
+        max_calls_per_run=args.advisor_max_calls,
+        fail_streak=args.advisor_fail_streak,
+    )
 
 result = run(
     task=Task.from_path(SCRIPT_DIR / "problem.py", editable=["solution"]),
@@ -72,6 +84,7 @@ result = run(
     run_budget=RunBudget(episodes_per_worker=10, plateau_patience=3),
     sandbox=args.sandbox,
     db=str(SCRIPT_DIR / "sidon.db"),
+    advisor=advisor,
 )
 
 artifact = result.solution or result.best_partial

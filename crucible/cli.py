@@ -15,7 +15,7 @@ try:
 except ImportError:
     pass
 
-from crucible import run as sdk_run
+from crucible import AdvisorPolicy, run as sdk_run
 from crucible.budgets import EpisodeBudget, RunBudget, parse_duration
 from crucible.orchestrator import SearchResult
 from crucible.task import Task
@@ -71,6 +71,10 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--image", default=None, help="docker image override")
     r.add_argument("--out", default="crucible-out", help="where to write the result artifact")
     r.add_argument("--db", default="crucible.db")
+    # LLM shepherding / advisor flags
+    r.add_argument("--advisor", default=None, help="advisor model name (e.g. claude-opus-4-8)")
+    r.add_argument("--advisor-max-calls", type=int, default=None, help="max advisor calls per run")
+    r.add_argument("--advisor-fail-streak", type=int, default=3, help="trigger advisor after N non-improving episodes")
 
     # List runs command
     ls = sub.add_parser("runs", help="list runs stored in the database")
@@ -226,6 +230,14 @@ def main(argv: list[str] | None = None, run_fn: Callable[..., SearchResult] | No
 
     if args.command == "run":
         fn = run_fn or sdk_run
+        # Build advisor policy from CLI flags
+        advisor = None
+        if args.advisor is not None:
+            advisor = AdvisorPolicy(
+                model=args.advisor,
+                max_calls_per_run=args.advisor_max_calls,
+                fail_streak=args.advisor_fail_streak,
+            )
         result = fn(
             task=Task.from_path(args.path, editable=args.editable),
             verifier=parse_verifier(args.verifier),
@@ -236,6 +248,7 @@ def main(argv: list[str] | None = None, run_fn: Callable[..., SearchResult] | No
             sandbox=args.sandbox,
             image=args.image,
             db=args.db,
+            advisor=advisor,
         )
         out = Path(args.out)
         artifact = result.solution or result.best_partial

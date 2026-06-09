@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from crucible import AdvisorPolicy
 from crucible.artifact import Artifact
 from crucible.budgets import RunBudget
 from crucible.cli import main, parse_run_budget, parse_verifier
@@ -89,3 +90,74 @@ def test_main_unsolved_exits_two(tmp_path: Path, capsys) -> None:
     )
     assert code == 2
     assert "best partial" in capsys.readouterr().out.lower()
+
+
+def test_main_advisor_flags_build_policy(tmp_path: Path, capsys) -> None:
+    """Task 7: CLI --advisor flags build AdvisorPolicy and pass to run()."""
+    (tmp_path / "problem.py").write_text(PROBLEM)
+    out = tmp_path / "out"
+    captured_kwargs = {}
+
+    def capture_run(**kw):
+        captured_kwargs.update(kw)
+        return solved_result(tmp_path)
+
+    code = main(
+        [
+            "run",
+            str(tmp_path / "problem.py"),
+            "--editable",
+            "solution",
+            "--verifier",
+            "cmd:true",
+            "--workers",
+            "1",
+            "--out",
+            str(out),
+            "--db",
+            str(tmp_path / "c.db"),
+            "--advisor",
+            "claude-opus-4-8",
+            "--advisor-max-calls",
+            "5",
+            "--advisor-fail-streak",
+            "4",
+        ],
+        run_fn=capture_run,
+    )
+    assert code == 0
+    assert "advisor" in captured_kwargs
+    policy = captured_kwargs["advisor"]
+    assert isinstance(policy, AdvisorPolicy)
+    assert policy.model == "claude-opus-4-8"
+    assert policy.max_calls_per_run == 5
+    assert policy.fail_streak == 4
+
+
+def test_main_advisor_defaults_when_not_specified(tmp_path: Path, capsys) -> None:
+    """Task 7: when --advisor is not specified, advisor=None."""
+    (tmp_path / "problem.py").write_text(PROBLEM)
+    captured_kwargs = {}
+
+    def capture_run(**kw):
+        captured_kwargs.update(kw)
+        return solved_result(tmp_path)
+
+    main(
+        [
+            "run",
+            str(tmp_path / "problem.py"),
+            "--editable",
+            "solution",
+            "--verifier",
+            "cmd:true",
+            "--workers",
+            "1",
+            "--out",
+            str(tmp_path / "out"),
+            "--db",
+            str(tmp_path / "c.db"),
+        ],
+        run_fn=capture_run,
+    )
+    assert captured_kwargs.get("advisor") is None

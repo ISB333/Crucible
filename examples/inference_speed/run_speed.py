@@ -39,6 +39,9 @@ ap.add_argument("--target-agg", type=float, default=30.0)
 ap.add_argument("--target-single", type=float, default=8.0)
 ap.add_argument("--sandbox", choices=["subprocess", "docker"], default="subprocess")
 ap.add_argument("--db", default=str(SCRIPT_DIR / "speed.db"))
+ap.add_argument("--episodes", type=int, default=6, help="episodes per worker")
+ap.add_argument("--edits", type=int, default=20, help="max edits per episode")
+ap.add_argument("--turns", type=int, default=10, help="max turns per episode")
 args = ap.parse_args()
 
 if not (os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")):
@@ -52,8 +55,22 @@ if args.advisor:
         fail_streak=args.advisor_fail_streak,
     )
 
+# Build the task from a curated file list: Task.from_path(dir) would include
+# __pycache__/*.pyc (binary, breaks read_text) and speed.db. Exclude those.
+_task_files = tuple(
+    sorted(
+        str(f.relative_to(SCRIPT_DIR))
+        for f in SCRIPT_DIR.rglob("*")
+        if f.is_file()
+        and not any(
+            p.startswith(".") or p == "__pycache__" for p in f.relative_to(SCRIPT_DIR).parts
+        )
+        and f.suffix not in (".pyc", ".db")
+    )
+)
+
 result = run(
-    task=Task.from_path(SCRIPT_DIR, editable=["config"], network=True),
+    task=Task(root=SCRIPT_DIR, files=_task_files, editable=("config",), network=True),
     verifier=SpeedQualityVerifier(
         target_agg=args.target_agg,
         target_single=args.target_single,
@@ -61,8 +78,8 @@ result = run(
     ),
     model=args.model,
     workers=args.workers,
-    episode=budgets(edits=20, turns=10),
-    run_budget=RunBudget(episodes_per_worker=6, plateau_patience=3),
+    episode=budgets(edits=args.edits, turns=args.turns),
+    run_budget=RunBudget(episodes_per_worker=args.episodes, plateau_patience=3),
     sandbox=args.sandbox,
     db=args.db,
     advisor=advisor,

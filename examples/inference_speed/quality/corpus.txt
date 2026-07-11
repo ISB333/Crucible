@@ -1,0 +1,14 @@
+The traveling salesman problem asks for the shortest route visiting every city
+exactly once and returning to the origin. It is NP-hard in the general case,
+but many instances succumb to branch-and-bound, dynamic programming over
+bitmask subsets, or heuristic approximation. The Held-Karp algorithm solves it
+in O(n^2 2^n) time and O(n 2^n) space, feasible up to roughly twenty cities.
+
+A Sidon set is a set of integers whose pairwise sums are all distinct. The
+largest Sidon set in [1, n] has size about the square root of n. Constructions
+such as Erdos-Turan and Bose give near-optimal sets for prime-power ranges.
+
+Speculative decoding pairs a fast draft model with a slow target model. The
+draft proposes several tokens; the target verifies them in a single forward
+pass and accepts those consistent with its own distribution. Accepted tokens
+are exactly what the target would have emitted, so the speedup is lossless.

@@ -1,0 +1,5 @@
+{"id":"s1","prompt":"Write a Python function that returns the nth Fibonacci number iteratively. Only output the function body, no prose."}
+{"id":"s2","prompt":"Write a Python function is_prime(n) that returns True if n is prime. Only output the function, no prose."}
+{"id":"s3","prompt":"Write a Python function reverse_list(xs) returning the reversed list. Only output the function, no prose."}
+{"id":"s4","prompt":"Write a Python function sum_digits(n) summing decimal digits of n. Only output the function, no prose."}
+{"id":"s5","prompt":"Write a Python function dedupe(xs) preserving order, removing duplicates. Only output the function, no prose."}

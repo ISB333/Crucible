@@ -67,3 +67,84 @@ class Config:
         if self.cache_policy == "off":
             args.append("--no-context-shift")
         return args
+
+
+# --- measurement core (seam-injected; never loads the 9B in unit tests) ---
+
+import json as _json
+import time as _time
+from pathlib import Path as _Path
+
+
+def tok_per_second(events: list[tuple[str, float]]) -> float:
+    """tokens / (last_timestamp - first_timestamp). 0.0 if undefined."""
+    if len(events) < 2:
+        return 0.0
+    t0 = events[0][1]
+    t1 = events[-1][1]
+    span = t1 - t0
+    if span <= 0.0:
+        return 0.0
+    return len(events) / span
+
+
+def load_workload(path: _Path) -> list[dict]:
+    """Load a JSONL workload file -> list of {"id","prompt"} dicts."""
+    items: list[dict] = []
+    for line in _Path(path).read_text().splitlines():
+        line = line.strip()
+        if line:
+            items.append(_json.loads(line))
+    return items
+
+
+def measure_single_stream(stream_fn, base_url: str, prompts: list[dict], max_tokens: int = 256) -> dict:
+    """Stream each prompt greedily; report median tok/s and totals.
+
+    stream_fn(base_url, prompt, max_tokens, temperature=0.0) -> list[(token, perf_counter)].
+    """
+    per_prompt: list[dict] = []
+    total_tokens = 0
+    tps_values: list[float] = []
+    for item in prompts:
+        events = stream_fn(base_url, item["prompt"], max_tokens, temperature=0.0)
+        tps = tok_per_second(events)
+        per_prompt.append({"id": item["id"], "tok_s": tps, "n_tokens": len(events)})
+        total_tokens += len(events)
+        if tps > 0:
+            tps_values.append(tps)
+    tps_values.sort()
+    median = tps_values[len(tps_values) // 2] if tps_values else 0.0
+    return {"tok_s": median, "n_tokens": total_tokens, "per_prompt": per_prompt}
+
+
+def measure_aggregate(stream_fn, base_url: str, prompts: list[dict], max_tokens: int = 256) -> dict:
+    """Fire all prompts concurrently; aggregate tok/s = total_tokens / wall_clock.
+
+    The stream_fn is run concurrently via threads (llama-server handles parallel
+    decoders when --parallel >= n_concurrent). Wall clock is real perf_counter.
+    """
+    import concurrent.futures as cf
+
+    def one(item):
+        return stream_fn(base_url, item["prompt"], max_tokens, temperature=0.0)
+
+    t0 = _time.perf_counter()
+    with cf.ThreadPoolExecutor(max_workers=max(1, len(prompts))) as pool:
+        results = list(pool.map(one, prompts))
+    t1 = _time.perf_counter()
+    wall = t1 - t0
+    total = sum(len(r) for r in results)
+    tps = total / wall if wall > 0 else 0.0
+    return {"tok_s": tps, "n_tokens": total, "wall_s": wall}
+
+
+def lossless_match(probe_outputs: dict[str, str], reference: dict[str, str]) -> tuple[bool, list[str]]:
+    """Byte-identical comparison of candidate probe outputs vs frozen reference.
+
+    For lossless-by-construction optimizations (spec decoding, batching, cache),
+    accepted output MUST equal the greedy reference. Any mismatch is a quality
+    regression -> the verifier returns Fail.
+    """
+    mism = [pid for pid in reference if probe_outputs.get(pid) != reference[pid]]
+    return (len(mism) == 0, mism)

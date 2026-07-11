@@ -1,0 +1,8 @@
+{"id":"a1","prompt":"Write Python: def merge(a,b): merge two sorted lists. Output code only."}
+{"id":"a2","prompt":"Write Python: def quicksort(xs): in-place quicksort. Output code only."}
+{"id":"a3","prompt":"Write Python: def tokenize(s): split on whitespace, strip punctuation. Output code only."}
+{"id":"a4","prompt":"Write Python: def bitcount(n): number of set bits. Output code only."}
+{"id":"a5","prompt":"Write Python: def lcs(a,b): longest common substring length. Output code only."}
+{"id":"a6","prompt":"Write Python: def rotate(xs,k): rotate list right by k. Output code only."}
+{"id":"a7","prompt":"Write Python: def flatten(xs): flatten one level of nesting. Output code only."}
+{"id":"a8","prompt":"Write Python: def histogram(xs): dict of element counts. Output code only."}

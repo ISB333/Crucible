@@ -6,6 +6,18 @@ spec: the measurement methodology, the target model, and the quality gate.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from typing import Protocol
+
+    class _Proc(Protocol):
+        """Minimal subprocess-like handle the harness needs to stop a server."""
+
+        def terminate(self) -> None: ...
+        def wait(self, timeout: float | None = ...) -> object: ...
+
 
 TARGET_MODEL = "/home/isb/models/Qwen3.5-9B-Q4_K_M.gguf"
 _VPS_CORES = 12
@@ -148,3 +160,136 @@ def lossless_match(probe_outputs: dict[str, str], reference: dict[str, str]) -> 
     """
     mism = [pid for pid in reference if probe_outputs.get(pid) != reference[pid]]
     return (len(mism) == 0, mism)
+
+
+# --- server lifecycle + real streamer (integration; seams for unit tests) ---
+
+import subprocess as _subprocess
+
+
+def wait_for_ready(base_url: str, timeout_s: float = 120.0, http_get=None) -> bool:
+    """Poll {base_url}/health until 200 or timeout. http_get is a seam (default requests.get)."""
+    if http_get is None:
+        import requests
+
+        http_get = requests.get
+    deadline = _time.perf_counter() + timeout_s
+    url = base_url.rstrip("/") + "/health"
+    while _time.perf_counter() < deadline:
+        try:
+            r = http_get(url, timeout=2.0)
+            if getattr(r, "status_code", 0) == 200:
+                return True
+        except Exception:
+            pass
+        _time.sleep(0.5)
+    return False
+
+
+def launch_server(
+    config: "Config",
+    port: int = 8080,
+    runner: "Callable[..., _Proc] | None" = None,
+) -> tuple[_Proc, str]:
+    """Start llama-server with config.to_cli_args(). runner is a seam (default subprocess.Popen)."""
+    if runner is None:
+        runner = _subprocess.Popen  # Popen is structurally _Proc (terminate + wait)
+    cmd = ["llama-server", *config.to_cli_args(), "--port", str(port), "--host", "127.0.0.1"]
+    proc = runner(cmd, stdout=_subprocess.PIPE, stderr=_subprocess.STDOUT)
+    return proc, f"http://127.0.0.1:{port}"
+
+
+def httpx_stream(base_url: str, prompt: str, max_tokens: int, temperature: float = 0.0) -> list[tuple[str, float]]:
+    """Real streamer: POST {base_url}/v1/chat/completions with stream=true; record perf_counter per chunk."""
+    import httpx
+
+    body = {
+        "model": "target",
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "stream": True,
+    }
+    events: list[tuple[str, float]] = []
+    with httpx.Client(timeout=120.0) as client:
+        with client.stream("POST", base_url.rstrip("/") + "/v1/chat/completions", json=body) as resp:
+            for line in resp.iter_lines():
+                if not line or not line.startswith("data: "):
+                    continue
+                data = line[len("data: "):]
+                if data.strip() == "[DONE]":
+                    break
+                try:
+                    obj = _json.loads(data)
+                    delta = obj["choices"][0].get("delta", {})
+                    tok = delta.get("content") or delta.get("token") or ""
+                except Exception:
+                    continue
+                if tok:
+                    events.append((tok, _time.perf_counter()))
+    return events
+
+
+# --- orchestration ---
+
+def _join_completion(stream_fn):
+    """Wrap a stream_fn into a non-streaming greedy completion: returns joined text."""
+    def completion(base_url, prompt, max_tokens):
+        events = stream_fn(base_url, prompt, max_tokens, temperature=0.0)
+        return "".join(tok for tok, _ in events)
+
+    return completion
+
+
+def _config_dict(c: "Config") -> dict:
+    from dataclasses import asdict
+
+    return asdict(c)
+
+
+def run_harness(
+    config: "Config",
+    workspace: _Path,
+    stream_fn=None,
+    launcher=None,
+    waiter=None,
+    completion_fn=None,
+) -> dict:
+    """Launch the target, measure single + aggregate, run the lossless probe check, return JSON result.
+
+    All 9B interaction is via seams; unit tests pass fakes. The workspace must contain
+    workload/prompts_single.jsonl, workload/prompts_aggregate.jsonl, workload/probes.jsonl.
+    The lossless reference comparison is done by the verifier (which holds baseline.json);
+    the harness returns raw probe_outputs and a placeholder quality block.
+    """
+    stream_fn = stream_fn or httpx_stream
+    launcher = launcher or (lambda c, port: launch_server(c, port))
+    waiter = waiter or (lambda url, timeout_s=120.0: wait_for_ready(url, timeout_s))
+    completion_fn = completion_fn or _join_completion(stream_fn)
+
+    proc, base_url = launcher(config, 8080)
+    try:
+        if not waiter(base_url):
+            return {"error": "server did not become ready", "config": _config_dict(config)}
+        single_prompts = load_workload(workspace / "workload" / "prompts_single.jsonl")
+        agg_prompts = load_workload(workspace / "workload" / "prompts_aggregate.jsonl")
+        probes = load_workload(workspace / "workload" / "probes.jsonl")
+
+        single = measure_single_stream(stream_fn, base_url, single_prompts)
+        aggregate = measure_aggregate(stream_fn, base_url, agg_prompts)
+
+        probe_outputs = {p["id"]: completion_fn(base_url, p["prompt"], 16) for p in probes}
+        return {
+            "config": _config_dict(config),
+            "single_stream": single,
+            "aggregate": aggregate,
+            "probe_outputs": probe_outputs,
+            "quality": {"path": "lossless", "match": None, "mismatched": None},  # filled by verifier
+            "loaded_model": TARGET_MODEL,
+        }
+    finally:
+        try:
+            proc.terminate()
+            proc.wait(timeout=15)
+        except Exception:
+            pass

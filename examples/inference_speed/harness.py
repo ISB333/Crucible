@@ -144,19 +144,27 @@ def measure_single_stream(
     return {"tok_s": median, "n_tokens": total_tokens, "per_prompt": per_prompt}
 
 
-def measure_aggregate(stream_fn, base_url: str, prompts: list[dict], max_tokens: int = 256) -> dict:
-    """Fire all prompts concurrently; aggregate tok/s = total_tokens / wall_clock.
+def measure_aggregate(
+    stream_fn,
+    base_url: str,
+    prompts: list[dict],
+    max_tokens: int = 256,
+    max_workers: int | None = None,
+) -> dict:
+    """Fire prompts concurrently; aggregate tok/s = total_tokens / wall_clock.
 
-    The stream_fn is run concurrently via threads (llama-server handles parallel
-    decoders when --parallel >= n_concurrent). Wall clock is real perf_counter.
+    max_workers caps concurrency (should be config.n_concurrent so we never queue
+    more requests than llama-server has slots — queued requests time out). None ->
+    len(prompts) (back-compat). Wall clock is real perf_counter.
     """
     import concurrent.futures as cf
 
     def one(item):
         return stream_fn(base_url, item["prompt"], max_tokens, temperature=0.0)
 
+    workers = max_workers if max_workers is not None else max(1, len(prompts))
     t0 = _time.perf_counter()
-    with cf.ThreadPoolExecutor(max_workers=max(1, len(prompts))) as pool:
+    with cf.ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         results = list(pool.map(one, prompts))
     t1 = _time.perf_counter()
     wall = t1 - t0
@@ -247,7 +255,7 @@ def httpx_stream(
         "stream": True,
     }
     events: list[tuple[str, float]] = []
-    with httpx.Client(timeout=120.0) as client:
+    with httpx.Client(timeout=300.0) as client:
         with client.stream(
             "POST", base_url.rstrip("/") + "/v1/chat/completions", json=body
         ) as resp:
@@ -318,7 +326,9 @@ def run_harness(
         probes = load_workload(workspace / "workload" / "probes.jsonl")
 
         single = measure_single_stream(stream_fn, base_url, single_prompts, max_tokens=max_tokens)
-        aggregate = measure_aggregate(stream_fn, base_url, agg_prompts, max_tokens=max_tokens)
+        aggregate = measure_aggregate(
+            stream_fn, base_url, agg_prompts, max_tokens=max_tokens, max_workers=config.n_concurrent
+        )
 
         probe_outputs = {p["id"]: completion_fn(base_url, p["prompt"], 16) for p in probes}
         return {

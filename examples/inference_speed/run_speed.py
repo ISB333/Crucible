@@ -1,0 +1,103 @@
+"""Wave 1: verifier-grounded search over the 9B inference config.
+
+Usage (GOOGLE_API_KEY from .env):
+  uv run python examples/inference_speed/run_speed.py
+  uv run python examples/inference_speed/run_speed.py --model gemini-2.5-flash \
+      --advisor gemini-2.5-pro --workers 4 --target-agg 30 --target-single 8
+
+The worker (Gemini Flash) edits the `config` region; the SpeedQualityVerifier
+measures single-stream + aggregate tok/s with a lossless quality gate; the
+advisor (Gemini Pro) shepherds on plateau. The 9B is passive cargo.
+"""
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).parent
+sys.path.insert(0, str(SCRIPT_DIR))
+
+
+def _default_worker() -> str:
+    return "gemini-2.5-flash"
+
+
+from speed_verifier import SpeedQualityVerifier  # type: ignore[import-not-found]  # noqa: E402
+
+from crucible import AdvisorPolicy, Task, budgets, run  # noqa: E402
+from crucible.budgets import RunBudget  # noqa: E402
+
+ap = argparse.ArgumentParser(description="CPU inference speed search via Crucible")
+ap.add_argument("--model", default=_default_worker(), help="worker (Gemini) model")
+ap.add_argument("--advisor", default=None, help="shepherd (strong Gemini) model")
+ap.add_argument("--advisor-max-calls", type=int, default=8)
+ap.add_argument("--advisor-fail-streak", type=int, default=3)
+ap.add_argument("--workers", type=int, default=4)
+ap.add_argument("--target-agg", type=float, default=30.0)
+ap.add_argument("--target-single", type=float, default=8.0)
+ap.add_argument("--sandbox", choices=["subprocess", "docker"], default="subprocess")
+ap.add_argument("--db", default=str(SCRIPT_DIR / "speed.db"))
+args = ap.parse_args()
+
+if not (os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")):
+    sys.exit("Error: GOOGLE_API_KEY (or GEMINI_API_KEY) not set. Add it to .env or export it.")
+
+advisor = None
+if args.advisor:
+    advisor = AdvisorPolicy(
+        model=args.advisor,
+        max_calls_per_run=args.advisor_max_calls,
+        fail_streak=args.advisor_fail_streak,
+    )
+
+result = run(
+    task=Task.from_path(SCRIPT_DIR, editable=["config"], network=True),
+    verifier=SpeedQualityVerifier(
+        target_agg=args.target_agg,
+        target_single=args.target_single,
+        baseline_path=SCRIPT_DIR / "baseline.json",
+    ),
+    model=args.model,
+    workers=args.workers,
+    episode=budgets(edits=20, turns=10),
+    run_budget=RunBudget(episodes_per_worker=6, plateau_patience=3),
+    sandbox=args.sandbox,
+    db=args.db,
+    advisor=advisor,
+)
+
+artifact = result.solution or result.best_partial
+cfg_text = artifact.region_text(artifact.region("config")).strip()
+
+if result.solution:
+    print(
+        f"\nSOLVED — hit target agg>={args.target_agg} & single>={args.target_single} "
+        f"(run {result.run_id})"
+    )
+else:
+    print(f"\nBest partial — target not reached (run {result.run_id}):")
+print(cfg_text[:2000])
+
+# Independent re-verification: re-run the best config, never trust the search's claim.
+print("\n--- Independent re-verification ---")
+ns: dict = {}
+exec(artifact.files["config.py"], ns)
+best_cfg = ns["CONFIG"]
+from harness import run_harness  # noqa: E402
+
+r = run_harness(best_cfg, SCRIPT_DIR, max_tokens=64)
+print(
+    json.dumps(
+        {
+            "single_stream": r["single_stream"]["tok_s"],
+            "aggregate": r["aggregate"]["tok_s"],
+            "quality_path": r["quality"]["path"],
+            "loaded_model": r["loaded_model"],
+        },
+        indent=2,
+    )
+)
+
+print("\nInspect reasoning: uv run crucible reasoning --db examples/inference_speed/speed.db")

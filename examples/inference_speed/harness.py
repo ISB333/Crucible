@@ -80,13 +80,18 @@ class Config:
             str(self.n_concurrent),
         ]
         if self.flash_attn:
-            args.append("--flash-attn")
+            args += ["--flash-attn", "on"]  # --flash-attn takes a value (on|off|auto)
         if not self.use_mmap:
             args.append("--no-mmap")
         if self.use_mlock:
             args.append("--mlock")
         if self.draft_model:
-            args += ["--model-draft", self.draft_model, "--draft-max", str(self.draft_max)]
+            args += [
+                "--model-draft",
+                self.draft_model,
+                "--spec-draft-n-max",
+                str(self.draft_max),
+            ]
         if self.cache_policy == "off":
             args.append("--no-context-shift")
         return args
@@ -195,16 +200,33 @@ def wait_for_ready(base_url: str, timeout_s: float = 120.0, http_get=None) -> bo
     return False
 
 
+def _free_port() -> int:
+    """Pick an ephemeral free port (small TOCTOU race — acceptable for per-attempt servers)."""
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
 def launch_server(
     config: Config,
-    port: int = 8080,
+    port: int | None = None,
     runner: Callable[..., _Proc] | None = None,
 ) -> tuple[_Proc, str]:
-    """Start llama-server with config.to_cli_args(). runner is a seam (default subprocess.Popen)."""
+    """Start llama-server with config.to_cli_args(). port=None -> auto-pick a free port.
+
+    runner is a seam (default subprocess.Popen). Auto port lets parallel verifier
+    calls each get their own server without colliding.
+    """
     if runner is None:
         runner = _subprocess.Popen  # Popen is structurally _Proc (terminate + wait)
+    if port is None:
+        port = _free_port()
     cmd = ["llama-server", *config.to_cli_args(), "--port", str(port), "--host", "127.0.0.1"]
-    proc = runner(cmd, stdout=_subprocess.PIPE, stderr=_subprocess.STDOUT)
+    # DEVNULL (not PIPE): an unread PIPE would fill and block llama-server on heavy logging.
+    # To debug a launch failure, run llama-server manually with the same to_cli_args().
+    proc = runner(cmd, stdout=_subprocess.DEVNULL, stderr=_subprocess.DEVNULL)
     return proc, f"http://127.0.0.1:{port}"
 
 
@@ -272,6 +294,7 @@ def run_harness(
     launcher=None,
     waiter=None,
     completion_fn=None,
+    max_tokens: int = 256,
 ) -> dict:
     """Launch the target, measure single + aggregate, run the lossless probe check.
 
@@ -286,7 +309,7 @@ def run_harness(
     waiter = waiter or (lambda url, timeout_s=120.0: wait_for_ready(url, timeout_s))
     completion_fn = completion_fn or _join_completion(stream_fn)
 
-    proc, base_url = launcher(config, 8080)
+    proc, base_url = launcher(config, None)  # None -> launch_server auto-picks a free port
     try:
         if not waiter(base_url):
             return {"error": "server did not become ready", "config": _config_dict(config)}
@@ -294,8 +317,8 @@ def run_harness(
         agg_prompts = load_workload(workspace / "workload" / "prompts_aggregate.jsonl")
         probes = load_workload(workspace / "workload" / "probes.jsonl")
 
-        single = measure_single_stream(stream_fn, base_url, single_prompts)
-        aggregate = measure_aggregate(stream_fn, base_url, agg_prompts)
+        single = measure_single_stream(stream_fn, base_url, single_prompts, max_tokens=max_tokens)
+        aggregate = measure_aggregate(stream_fn, base_url, agg_prompts, max_tokens=max_tokens)
 
         probe_outputs = {p["id"]: completion_fn(base_url, p["prompt"], 16) for p in probes}
         return {

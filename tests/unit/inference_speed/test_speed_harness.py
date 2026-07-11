@@ -7,7 +7,9 @@ def _ws_with_fixtures(tmp_path: Path) -> Path:
     ws = tmp_path / "ws"
     (ws / "workload").mkdir(parents=True)
     (ws / "workload" / "prompts_single.jsonl").write_text('{"id":"s1","prompt":"x"}\n')
-    (ws / "workload" / "prompts_aggregate.jsonl").write_text('{"id":"a1","prompt":"y"}\n{"id":"a2","prompt":"z"}\n')
+    (ws / "workload" / "prompts_aggregate.jsonl").write_text(
+        '{"id":"a1","prompt":"y"}\n{"id":"a2","prompt":"z"}\n'
+    )
     (ws / "workload" / "probes.jsonl").write_text('{"id":"p1","prompt":"q"}\n')
     return ws
 
@@ -36,8 +38,12 @@ def test_run_harness_emits_full_result(tmp_path):
         return True
 
     res = run_harness(
-        cfg, ws, stream_fn=fake_stream, launcher=fake_launcher,
-        waiter=fake_waiter, completion_fn=fake_completion,
+        cfg,
+        ws,
+        stream_fn=fake_stream,
+        launcher=fake_launcher,
+        waiter=fake_waiter,
+        completion_fn=fake_completion,
     )
     assert res["single_stream"]["n_tokens"] == 2
     assert res["aggregate"]["n_tokens"] == 4
@@ -61,7 +67,8 @@ def test_run_harness_returns_error_when_not_ready(tmp_path):
         return FakeProc(), f"http://127.0.0.1:{port}"
 
     res = run_harness(
-        Config(), ws,
+        Config(),
+        ws,
         stream_fn=lambda *a, **k: [],
         launcher=fake_launcher,
         waiter=lambda url, timeout_s=120.0: False,

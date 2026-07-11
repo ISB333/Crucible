@@ -1,5 +1,9 @@
 """The single editable surface of the experiment. Gemini edits the `config` region only."""
-from harness import Config, TARGET_MODEL  # noqa: F401  (TARGET_MODEL frozen, imported for stability)
+
+from harness import (  # noqa: F401  (TARGET_MODEL frozen, imported for stability)
+    TARGET_MODEL,
+    Config,
+)
 
 # crucible:region start name=config
 CONFIG = Config(

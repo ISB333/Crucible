@@ -1,5 +1,4 @@
 import pytest
-
 from harness import Config  # type: ignore[import-not-found]
 
 

@@ -1,7 +1,5 @@
-import pytest
-
 import harness  # type: ignore[import-not-found]
-from harness import wait_for_ready, launch_server, Config  # type: ignore[import-not-found]
+from harness import Config, launch_server, wait_for_ready  # type: ignore[import-not-found]
 
 
 def test_wait_for_ready_succeeds_on_200():
@@ -22,7 +20,7 @@ def test_wait_for_ready_succeeds_on_200():
 def test_wait_for_ready_times_out_on_500(monkeypatch):
     t = [0.0]
     monkeypatch.setattr(
-        harness._time, "perf_counter", lambda: (t.__setitem__(0, t[0] + 10.0) or t[0])
+        harness._time, "perf_counter", lambda: t.__setitem__(0, t[0] + 10.0) or t[0]
     )
 
     def fake_get(url, timeout=1.0):
@@ -48,7 +46,9 @@ def test_launch_server_uses_config_cli_args():
         captured["cmd"] = cmd
         return FakeProc()
 
-    proc, base_url = launch_server(Config(n_threads=8, n_concurrent=4), port=8080, runner=fake_runner)
+    proc, base_url = launch_server(
+        Config(n_threads=8, n_concurrent=4), port=8080, runner=fake_runner
+    )
     assert "--threads" in captured["cmd"]
     assert captured["cmd"][captured["cmd"].index("--threads") + 1] == "8"
     assert base_url == "http://127.0.0.1:8080"

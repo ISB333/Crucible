@@ -3,6 +3,7 @@
 Mirrors the sidon example's sys.path.insert(SCRIPT_DIR) pattern, centralized here
 so each test file just does `from harness import ...` without repeating the path setup.
 """
+
 import sys
 from pathlib import Path
 

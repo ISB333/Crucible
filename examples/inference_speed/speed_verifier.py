@@ -5,6 +5,7 @@ lossless quality against a frozen baseline, returns Scored(value=aggregate) /
 Ok / Fail. Incumbent tracking and plateau detection are the orchestrator's job
 (Scored ranking + plateau_patience), not this verifier's.
 """
+
 from __future__ import annotations
 
 import json
@@ -15,20 +16,31 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+from check_draft_compat import tokenizers_compatible  # type: ignore[import-not-found]
+from harness import (  # type: ignore[import-not-found]
+    TARGET_MODEL,
+    Config,
+    lossless_match,
+    run_harness,
+)
+
 from crucible.artifact import Artifact, scan_holes
 from crucible.verify import Fail, Ok, Partial, RunContext, Scored, Verdict
-from harness import TARGET_MODEL, Config, lossless_match, run_harness  # type: ignore[import-not-found]
 
 
 @dataclass(frozen=True)
 class SpeedQualityVerifier:
-    """Ok when agg>=target_agg and single>=target_single and quality-clean; else Scored(value=agg) or Fail."""
+    """Ok when agg>=target_agg and single>=target_single and quality-clean.
+
+    Otherwise Scored(value=agg) when quality-clean but below target, or Fail.
+    """
 
     target_agg: float = 30.0
     target_single: float = 8.0
     baseline_path: Path = Path("examples/inference_speed/baseline.json")
-    runner: "Callable[[Config, Path], dict] | None" = None  # seam: (config, workspace) -> result dict
-    config_loader: "Callable[[Path], Config] | None" = None  # seam: workspace -> Config
+    runner: Callable[[Config, Path], dict] | None = None  # seam: (config, workspace) -> result dict
+    config_loader: Callable[[Path], Config] | None = None  # seam: workspace -> Config
+    compat_checker: Callable[[str, str], bool] | None = None  # seam: (target, draft) -> bool
     deterministic: bool = True
 
     @property
@@ -38,7 +50,9 @@ class SpeedQualityVerifier:
     def verify(self, artifact: Artifact, ctx: RunContext) -> Verdict:
         holes = scan_holes(artifact)
         if holes:
-            return Partial(open_holes=holes, feedback="config region contains a hole sentinel — not filled")
+            return Partial(
+                open_holes=holes, feedback="config region contains a hole sentinel — not filled"
+            )
 
         ws = ctx.materialize(artifact)
         baseline = json.loads(Path(self.baseline_path).read_text())
@@ -50,6 +64,24 @@ class SpeedQualityVerifier:
             return Fail(feedback=f"config region did not produce a valid Config: {exc!r}")
 
         runner = self.runner or (lambda cfg, workspace: run_harness(cfg, workspace))
+
+        # Speculative-decoding integrity: a draft must share the target tokenizer,
+        # else accepted tokens would not match what the target would emit (quality loss).
+        if config.draft_model:
+            compat = (
+                self.compat_checker(TARGET_MODEL, config.draft_model)
+                if self.compat_checker
+                else tokenizers_compatible(TARGET_MODEL, config.draft_model)
+            )
+            if not compat:
+                return Fail(
+                    feedback=(
+                        "draft tokenizer incompatible with target — "
+                        "spec decoding would mis-accept tokens; "
+                        f"draft={config.draft_model}"
+                    )
+                )
+
         try:
             result = runner(config, ws)
         except Exception as exc:  # crashed launch / measurement
@@ -60,18 +92,24 @@ class SpeedQualityVerifier:
 
         # Integrity: the loaded model must be the fixed target (don't trust config).
         if result.get("loaded_model") != TARGET_MODEL:
-            return Fail(feedback=(
-                f"loaded model {result.get('loaded_model')!r} != target {TARGET_MODEL!r}; "
-                "swapping the target model is a gaming vector (editing the measure, not the speed)."
-            ))
+            return Fail(
+                feedback=(
+                    f"loaded model {result.get('loaded_model')!r} != target {TARGET_MODEL!r}; "
+                    "swapping the target model is a gaming vector "
+                    "(editing the measure, not the speed)."
+                )
+            )
 
         # Lossless quality gate: candidate probe outputs vs frozen baseline reference.
         ok, mism = lossless_match(result.get("probe_outputs", {}), baseline["probe_reference"])
         if not ok:
-            return Fail(feedback=(
-                f"lossless gate FAILED — probe outputs diverge from greedy reference on {mism}. "
-                "The optimization changed the output, i.e. degraded quality."
-            ))
+            return Fail(
+                feedback=(
+                    f"lossless gate FAILED — probe outputs diverge "
+                    f"from greedy reference on {mism}. "
+                    "The optimization changed the output, i.e. degraded quality."
+                )
+            )
 
         agg = float(result["aggregate"]["tok_s"])
         single = float(result["single_stream"]["tok_s"])

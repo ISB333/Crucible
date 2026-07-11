@@ -1,12 +1,11 @@
 import json
 from pathlib import Path
 
-from crucible.artifact import Artifact
-from crucible.verify import Fail, Ok, Partial, Scored
-
 from harness import Config  # type: ignore[import-not-found]
 from speed_verifier import SpeedQualityVerifier  # type: ignore[import-not-found]
 
+from crucible.artifact import Artifact
+from crucible.verify import Fail, Ok, Partial, Scored
 
 _FILLED_CONFIG = (
     "from harness import Config\n"
@@ -31,15 +30,18 @@ def _baseline(tmp_path: Path, **extra) -> Path:
 
 
 def _artifact(config_text: str) -> Artifact:
-    return Artifact.from_files({
-        "config.py": config_text,
-        "harness.py": "from dataclasses import dataclass\n",  # frozen stub; config_loader seam bypasses it
-        "strategy.py": "",
-    })
+    return Artifact.from_files(
+        {
+            "config.py": config_text,
+            "harness.py": "from dataclasses import dataclass\n",  # frozen stub (loader bypassed)
+            "strategy.py": "",
+        }
+    )
 
 
 def _result(agg: float, single: float, probe="ANSWER", loaded=None):
     from harness import TARGET_MODEL  # type: ignore[import-not-found]
+
     return {
         "aggregate": {"tok_s": agg},
         "single_stream": {"tok_s": single},
@@ -124,6 +126,29 @@ def test_fail_when_config_load_raises(tmp_path, make_ctx):
     verdict = v.verify(_artifact(_FILLED_CONFIG), make_ctx())
     assert isinstance(verdict, Fail)
     assert "valid Config" in verdict.feedback
+
+
+def test_fail_when_draft_tokenizer_incompatible(tmp_path, make_ctx):
+    v = SpeedQualityVerifier(
+        baseline_path=_baseline(tmp_path),
+        runner=lambda cfg, ws: _result(40.0, 9.0),
+        config_loader=lambda ws: Config(draft_model="/some/draft.gguf"),
+        compat_checker=lambda target, draft: False,
+    )
+    verdict = v.verify(_artifact(_FILLED_CONFIG), make_ctx())
+    assert isinstance(verdict, Fail)
+    assert "incompatible" in verdict.feedback
+
+
+def test_draft_compatible_proceeds_to_runner(tmp_path, make_ctx):
+    v = SpeedQualityVerifier(
+        baseline_path=_baseline(tmp_path),
+        runner=lambda cfg, ws: _result(31.0, 9.0),
+        config_loader=lambda ws: Config(draft_model="/some/draft.gguf"),
+        compat_checker=lambda target, draft: True,
+    )
+    verdict = v.verify(_artifact(_FILLED_CONFIG), make_ctx())
+    assert isinstance(verdict, Ok)
 
 
 def test_task_from_path_marks_only_config_editable():

@@ -3,9 +3,14 @@
 Editability lives in config.py (the `config` region). This module is immutable
 spec: the measurement methodology, the target model, and the quality gate.
 """
+
 from __future__ import annotations
 
+import json as _json
+import subprocess as _subprocess
+import time as _time
 from dataclasses import dataclass
+from pathlib import Path as _Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -61,12 +66,18 @@ class Config:
 
     def to_cli_args(self) -> list[str]:
         args = [
-            "--model", TARGET_MODEL,
-            "--threads", str(self.n_threads),
-            "--batch-size", str(self.n_batch),
-            "--ubatch-size", str(self.n_ubatch),
-            "--ctx-size", str(self.ctx_size),
-            "--parallel", str(self.n_concurrent),
+            "--model",
+            TARGET_MODEL,
+            "--threads",
+            str(self.n_threads),
+            "--batch-size",
+            str(self.n_batch),
+            "--ubatch-size",
+            str(self.n_ubatch),
+            "--ctx-size",
+            str(self.ctx_size),
+            "--parallel",
+            str(self.n_concurrent),
         ]
         if self.flash_attn:
             args.append("--flash-attn")
@@ -82,10 +93,6 @@ class Config:
 
 
 # --- measurement core (seam-injected; never loads the 9B in unit tests) ---
-
-import json as _json
-import time as _time
-from pathlib import Path as _Path
 
 
 def tok_per_second(events: list[tuple[str, float]]) -> float:
@@ -110,7 +117,9 @@ def load_workload(path: _Path) -> list[dict]:
     return items
 
 
-def measure_single_stream(stream_fn, base_url: str, prompts: list[dict], max_tokens: int = 256) -> dict:
+def measure_single_stream(
+    stream_fn, base_url: str, prompts: list[dict], max_tokens: int = 256
+) -> dict:
     """Stream each prompt greedily; report median tok/s and totals.
 
     stream_fn(base_url, prompt, max_tokens, temperature=0.0) -> list[(token, perf_counter)].
@@ -151,7 +160,9 @@ def measure_aggregate(stream_fn, base_url: str, prompts: list[dict], max_tokens:
     return {"tok_s": tps, "n_tokens": total, "wall_s": wall}
 
 
-def lossless_match(probe_outputs: dict[str, str], reference: dict[str, str]) -> tuple[bool, list[str]]:
+def lossless_match(
+    probe_outputs: dict[str, str], reference: dict[str, str]
+) -> tuple[bool, list[str]]:
     """Byte-identical comparison of candidate probe outputs vs frozen reference.
 
     For lossless-by-construction optimizations (spec decoding, batching, cache),
@@ -163,8 +174,6 @@ def lossless_match(probe_outputs: dict[str, str], reference: dict[str, str]) -> 
 
 
 # --- server lifecycle + real streamer (integration; seams for unit tests) ---
-
-import subprocess as _subprocess
 
 
 def wait_for_ready(base_url: str, timeout_s: float = 120.0, http_get=None) -> bool:
@@ -187,9 +196,9 @@ def wait_for_ready(base_url: str, timeout_s: float = 120.0, http_get=None) -> bo
 
 
 def launch_server(
-    config: "Config",
+    config: Config,
     port: int = 8080,
-    runner: "Callable[..., _Proc] | None" = None,
+    runner: Callable[..., _Proc] | None = None,
 ) -> tuple[_Proc, str]:
     """Start llama-server with config.to_cli_args(). runner is a seam (default subprocess.Popen)."""
     if runner is None:
@@ -199,8 +208,13 @@ def launch_server(
     return proc, f"http://127.0.0.1:{port}"
 
 
-def httpx_stream(base_url: str, prompt: str, max_tokens: int, temperature: float = 0.0) -> list[tuple[str, float]]:
-    """Real streamer: POST {base_url}/v1/chat/completions with stream=true; record perf_counter per chunk."""
+def httpx_stream(
+    base_url: str, prompt: str, max_tokens: int, temperature: float = 0.0
+) -> list[tuple[str, float]]:
+    """Real streamer: POST {base_url}/v1/chat/completions with stream=true.
+
+    Records perf_counter per emitted chunk -> list[(token, timestamp)].
+    """
     import httpx
 
     body = {
@@ -212,11 +226,13 @@ def httpx_stream(base_url: str, prompt: str, max_tokens: int, temperature: float
     }
     events: list[tuple[str, float]] = []
     with httpx.Client(timeout=120.0) as client:
-        with client.stream("POST", base_url.rstrip("/") + "/v1/chat/completions", json=body) as resp:
+        with client.stream(
+            "POST", base_url.rstrip("/") + "/v1/chat/completions", json=body
+        ) as resp:
             for line in resp.iter_lines():
                 if not line or not line.startswith("data: "):
                     continue
-                data = line[len("data: "):]
+                data = line[len("data: ") :]
                 if data.strip() == "[DONE]":
                     break
                 try:
@@ -232,8 +248,10 @@ def httpx_stream(base_url: str, prompt: str, max_tokens: int, temperature: float
 
 # --- orchestration ---
 
+
 def _join_completion(stream_fn):
     """Wrap a stream_fn into a non-streaming greedy completion: returns joined text."""
+
     def completion(base_url, prompt, max_tokens):
         events = stream_fn(base_url, prompt, max_tokens, temperature=0.0)
         return "".join(tok for tok, _ in events)
@@ -241,26 +259,27 @@ def _join_completion(stream_fn):
     return completion
 
 
-def _config_dict(c: "Config") -> dict:
+def _config_dict(c: Config) -> dict:
     from dataclasses import asdict
 
     return asdict(c)
 
 
 def run_harness(
-    config: "Config",
+    config: Config,
     workspace: _Path,
     stream_fn=None,
     launcher=None,
     waiter=None,
     completion_fn=None,
 ) -> dict:
-    """Launch the target, measure single + aggregate, run the lossless probe check, return JSON result.
+    """Launch the target, measure single + aggregate, run the lossless probe check.
 
-    All 9B interaction is via seams; unit tests pass fakes. The workspace must contain
-    workload/prompts_single.jsonl, workload/prompts_aggregate.jsonl, workload/probes.jsonl.
-    The lossless reference comparison is done by the verifier (which holds baseline.json);
-    the harness returns raw probe_outputs and a placeholder quality block.
+    Returns the JSON result dict. All 9B interaction is via seams; unit tests pass
+    fakes. The workspace must contain workload/prompts_single.jsonl,
+    workload/prompts_aggregate.jsonl, workload/probes.jsonl. The lossless reference
+    comparison is done by the verifier (which holds baseline.json); the harness
+    returns raw probe_outputs and a placeholder quality block.
     """
     stream_fn = stream_fn or httpx_stream
     launcher = launcher or (lambda c, port: launch_server(c, port))
@@ -284,7 +303,11 @@ def run_harness(
             "single_stream": single,
             "aggregate": aggregate,
             "probe_outputs": probe_outputs,
-            "quality": {"path": "lossless", "match": None, "mismatched": None},  # filled by verifier
+            "quality": {
+                "path": "lossless",
+                "match": None,
+                "mismatched": None,
+            },  # filled by verifier
             "loaded_model": TARGET_MODEL,
         }
     finally:

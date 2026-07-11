@@ -1,11 +1,17 @@
-from harness import load_workload, measure_single_stream, measure_aggregate  # type: ignore[import-not-found]
+from harness import (  # type: ignore[import-not-found]
+    load_workload,
+    measure_aggregate,
+    measure_single_stream,
+)
 
 
 def _fake_stream(emit_per_second: float = 10.0):
     """stream_fn that emits n tokens at a fixed cadence (deterministic, no real time)."""
+
     def stream_fn(base_url, prompt, max_tokens, temperature=0.0):
         n = 20
         return [(f"tok{i}", i / emit_per_second) for i in range(n)]
+
     return stream_fn
 
 

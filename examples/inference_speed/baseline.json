@@ -1,0 +1,23 @@
+{
+  "single_stream": 2.1314041966653288,
+  "aggregate": 1.9556981211589106,
+  "probe_reference": {
+    "p1": "The capital of France is **Paris**.",
+    "p2": "2 + 2 = **4**",
+    "p3": "```python\ndef square(x):\n    return x * x\n```",
+    "p4": "The opposite of hot is **cold**."
+  },
+  "config": {
+    "draft_model": null,
+    "n_threads": 12,
+    "n_batch": 512,
+    "n_ubatch": 512,
+    "flash_attn": true,
+    "use_mmap": true,
+    "use_mlock": false,
+    "ctx_size": 4096,
+    "draft_max": 4,
+    "n_concurrent": 1,
+    "cache_policy": "on"
+  }
+}

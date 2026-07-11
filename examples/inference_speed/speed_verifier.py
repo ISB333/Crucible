@@ -9,6 +9,7 @@ Ok / Fail. Incumbent tracking and plateau detection are the orchestrator's job
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -63,7 +64,7 @@ class SpeedQualityVerifier:
         except Exception as exc:
             return Fail(feedback=f"config region did not produce a valid Config: {exc!r}")
 
-        runner = self.runner or (lambda cfg, workspace: run_harness(cfg, workspace))
+        runner = self.runner or _locked_run_harness
 
         # Speculative-decoding integrity: a draft must share the target tokenizer,
         # else accepted tokens would not match what the target would emit (quality loss).
@@ -139,3 +140,15 @@ def _load_config_from_workspace(ws: Path) -> Config:
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod.CONFIG
+
+
+# RAM safety: workers run in threads (orchestrator uses asyncio.to_thread). Without
+# serialization, N workers verifying concurrently would spawn N 9B servers (~3 GB each)
+# and OOM the VPS. The lock makes only the local 9B measurement serial; Gemini LLM turns
+# (the bulk of episode wall time) still parallelize across workers.
+_verify_lock = threading.Lock()
+
+
+def _locked_run_harness(cfg: Config, workspace: Path) -> dict:
+    with _verify_lock:
+        return run_harness(cfg, workspace)

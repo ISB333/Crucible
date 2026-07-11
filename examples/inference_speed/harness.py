@@ -274,7 +274,12 @@ def httpx_stream(
                     delta = obj["choices"][0].get("delta", {})
                     # content is the answer; fall back to reasoning_content/token so
                     # throughput is still counted if a model can't disable thinking.
-                    tok = delta.get("content") or delta.get("reasoning_content") or delta.get("token") or ""
+                    tok = (
+                        delta.get("content")
+                        or delta.get("reasoning_content")
+                        or delta.get("token")
+                        or ""
+                    )
                 except Exception:
                     continue
                 if tok:

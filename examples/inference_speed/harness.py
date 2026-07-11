@@ -253,6 +253,10 @@ def httpx_stream(
         "max_tokens": max_tokens,
         "temperature": temperature,
         "stream": True,
+        # Qwen3.5 is a reasoning model: without this it emits delta.reasoning_content
+        # (thinking) before delta.content, and a small max_tokens never reaches an answer.
+        # Disabling thinking makes it a fast direct answerer — the coding-agent use case.
+        "chat_template_kwargs": {"enable_thinking": False},
     }
     events: list[tuple[str, float]] = []
     with httpx.Client(timeout=300.0) as client:
@@ -268,7 +272,9 @@ def httpx_stream(
                 try:
                     obj = _json.loads(data)
                     delta = obj["choices"][0].get("delta", {})
-                    tok = delta.get("content") or delta.get("token") or ""
+                    # content is the answer; fall back to reasoning_content/token so
+                    # throughput is still counted if a model can't disable thinking.
+                    tok = delta.get("content") or delta.get("reasoning_content") or delta.get("token") or ""
                 except Exception:
                     continue
                 if tok:

@@ -6,12 +6,15 @@ from harness import (  # noqa: F401  (TARGET_MODEL frozen, imported for stabilit
 )
 
 # crucible:region start name=config
-# Self-speculative draft: a Q2_K of the SAME Qwen3.5-9B (same 248320-token
-# tokenizer by construction -> lossless). The Q4 target verifies the Q2 draft's
-# proposals in one forward pass. Tune draft_max (tokens drafted per step; higher
-# = more speedup if acceptance stays high) and n_concurrent (batching for
-# aggregate). Setting draft_model=None disables spec decoding.
+# Self-speculative draft: a lower-precision quant of the SAME Qwen3.5-9B (same
+# 248320-token tokenizer by construction -> lossless). The Q4 target verifies the
+# draft's proposals in one forward pass. DRAFT_Q3 (Q3_K_M, ~4.7GB, high acceptance)
+# usually beats DRAFT_Q2 (Q2_K, ~3.9GB, low acceptance) on this setup. Tune
+# draft_max (tokens drafted per step; higher = more speedup if acceptance stays
+# high) and n_concurrent (batching for aggregate). draft_model=None disables
+# spec decoding.
 DRAFT_Q2 = "/home/isb/models/Qwen3.5-9B-Q2_K.gguf"
+DRAFT_Q3 = "/home/isb/models/Qwen3.5-9B-Q3_K_M.gguf"
 CONFIG = Config(
     draft_model=DRAFT_Q2,
     n_threads=12,

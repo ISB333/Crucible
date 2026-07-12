@@ -127,22 +127,25 @@ print(cfg_text[:2000])
 
 # Independent re-verification: re-run the best config, never trust the search's claim.
 print("\n--- Independent re-verification ---")
-ns: dict = {}
-exec(artifact.files["config.py"], ns)
-best_cfg = ns["CONFIG"]
 from harness import run_harness  # noqa: E402
 
-r = run_harness(best_cfg, SCRIPT_DIR, max_tokens=64)
-print(
-    json.dumps(
-        {
-            "single_stream": r["single_stream"]["tok_s"],
-            "aggregate": r["aggregate"]["tok_s"],
-            "quality_path": r["quality"]["path"],
-            "loaded_model": r["loaded_model"],
-        },
-        indent=2,
+try:
+    ns: dict = {}
+    exec(artifact.files["config.py"], ns)
+    best_cfg = ns["CONFIG"]
+    r = run_harness(best_cfg, SCRIPT_DIR, max_tokens=64)
+    print(
+        json.dumps(
+            {
+                "single_stream": r["single_stream"]["tok_s"],
+                "aggregate": r["aggregate"]["tok_s"],
+                "quality_path": r["quality"]["path"],
+                "loaded_model": r["loaded_model"],
+            },
+            indent=2,
+        )
     )
-)
+except Exception as exc:
+    print(f"re-verification failed (best config is invalid): {exc!r}")
 
 print("\nInspect reasoning: uv run crucible reasoning --db examples/inference_speed/speed.db")

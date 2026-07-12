@@ -173,4 +173,9 @@ _verify_lock = threading.Lock()
 
 def _locked_run_harness(cfg: Config, workspace: Path) -> dict:
     with _verify_lock:
-        return run_harness(cfg, workspace)
+        # max_tokens=64 (not the run_harness default 256): 14 prompts at 256 tokens
+        # is ~18 min/verify -> only ~30 verifies in 10h, far too few to explore. 64
+        # tokens still amortizes prefill into a clean tok/s rate; the lossless probes
+        # use a fixed 16 tokens so the quality gate is unaffected. Matches the
+        # re-verification length in run_speed.py for a consistent measure.
+        return run_harness(cfg, workspace, max_tokens=64)

@@ -62,6 +62,25 @@ def test_partial_when_config_hole_sentinel(tmp_path, make_ctx):
     assert isinstance(verdict, Partial)
 
 
+def test_sentinel_in_frozen_file_does_not_block(tmp_path, make_ctx):
+    """README documents the `crucible:hole` sentinel — that must NOT trip the
+    verifier (regression for the false-positive PARTIAL that blocked run #6)."""
+    v = SpeedQualityVerifier(
+        baseline_path=_baseline(tmp_path),
+        runner=lambda cfg, ws: _result(40.0, 9.0),
+        config_loader=lambda ws: Config(),
+    )
+    artifact = Artifact.from_files(
+        {
+            "config.py": _FILLED_CONFIG,
+            "README.md": "The sentinel is `crucible:hole` — a hole placeholder.\n",
+            "harness.py": "from dataclasses import dataclass\n",
+        }
+    )
+    verdict = v.verify(artifact, make_ctx())
+    assert isinstance(verdict, Ok)
+
+
 def test_ok_when_targets_met_and_quality_clean(tmp_path, make_ctx):
     v = SpeedQualityVerifier(
         baseline_path=_baseline(tmp_path),

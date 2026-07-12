@@ -25,8 +25,30 @@ from harness import (  # type: ignore[import-not-found]
     run_harness,
 )
 
-from crucible.artifact import Artifact, scan_holes
+from crucible.artifact import HOLE_SENTINEL, NOT_IMPLEMENTED_RE, Artifact, Hole
 from crucible.verify import Fail, Ok, Partial, RunContext, Scored, Verdict
+
+
+def _config_region_holes(artifact: Artifact) -> tuple[Hole, ...]:
+    """Holes scoped to the editable `config` region only.
+
+    The whole-artifact scan_holes() would also scan frozen docs (e.g. README.md
+    documents the sentinel), producing a permanent false-positive PARTIAL that
+    blocks every measurement. A hole in a frozen file isn't the worker's fault;
+    only the config region is the worker's edit surface, so only it is checked.
+    """
+    try:
+        region = artifact.region("config")
+        text = artifact.region_text(region)
+    except Exception:
+        return ()
+    holes: list[Hole] = []
+    for i, line in enumerate(text.splitlines()):
+        if HOLE_SENTINEL in line:
+            holes.append(Hole(file="config.py", line=i, kind="sentinel", text=line.strip()))
+        elif NOT_IMPLEMENTED_RE.search(line):
+            holes.append(Hole(file="config.py", line=i, kind="not_implemented", text=line.strip()))
+    return tuple(holes)
 
 
 @dataclass(frozen=True)
@@ -49,7 +71,7 @@ class SpeedQualityVerifier:
         return f"speed:agg={self.target_agg},single={self.target_single}"
 
     def verify(self, artifact: Artifact, ctx: RunContext) -> Verdict:
-        holes = scan_holes(artifact)
+        holes = _config_region_holes(artifact)
         if holes:
             return Partial(
                 open_holes=holes, feedback="config region contains a hole sentinel — not filled"

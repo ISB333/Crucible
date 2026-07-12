@@ -21,7 +21,12 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 
 def _default_worker() -> str:
-    return "gemini-2.5-flash"
+    return "gemini-3.1-flash-lite"
+
+
+def _default_advisor() -> str | None:
+    # OLLAMA_MODEL names an Ollama-Cloud shepherd (e.g. "glm-5.2:cloud").
+    return os.environ.get("OLLAMA_MODEL")
 
 
 from speed_verifier import SpeedQualityVerifier  # type: ignore[import-not-found]  # noqa: E402
@@ -31,7 +36,7 @@ from crucible.budgets import RunBudget  # noqa: E402
 
 ap = argparse.ArgumentParser(description="CPU inference speed search via Crucible")
 ap.add_argument("--model", default=_default_worker(), help="worker (Gemini) model")
-ap.add_argument("--advisor", default=None, help="shepherd (strong Gemini) model")
+ap.add_argument("--advisor", default=_default_advisor(), help="shepherd model (e.g. glm-5.2:cloud)")
 ap.add_argument("--advisor-max-calls", type=int, default=8)
 ap.add_argument("--advisor-fail-streak", type=int, default=3)
 ap.add_argument("--workers", type=int, default=4)
@@ -46,6 +51,16 @@ args = ap.parse_args()
 
 if not (os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")):
     sys.exit("Error: GOOGLE_API_KEY (or GEMINI_API_KEY) not set. Add it to .env or export it.")
+
+# Route a non-Gemini/Claude shepherd through Ollama Cloud when OLLAMA_API_KEY is set.
+# The advisor uses the OpenAI-compatible provider; the Gemini worker ignores OPENAI_*.
+if (
+    args.advisor
+    and not args.advisor.startswith(("claude", "gemini"))
+    and os.environ.get("OLLAMA_API_KEY")
+):
+    os.environ.setdefault("OPENAI_BASE_URL", "https://ollama.com/v1")
+    os.environ["OPENAI_API_KEY"] = os.environ["OLLAMA_API_KEY"]
 
 advisor = None
 if args.advisor:

@@ -1,8 +1,8 @@
 """Speculative decoding requires draft and target to share a tokenizer.
 
 Checked by the verifier before any --model-draft attempt; an incompatible draft is
-a Fail, not a crash. The unit path is seam-tested; the real loader (llama-server
---vocab-only dump) is an integration concern verified at run time.
+a Fail, not a crash. The unit path is seam-tested; the real path compares gguf
+metadata (arch + token-table bytes) via the gguf library.
 """
 
 from __future__ import annotations
@@ -25,21 +25,22 @@ def tokenizers_compatible(
 
 
 def _real_compare(target_gguf: str, draft_gguf: str) -> bool:
-    """Integration path: dump each model's vocab via llama-server and compare token lists.
+    """Compare tokenizers via gguf metadata: arch + token-table bytes must match.
 
-    The exact stdout format is verified at integration time; if llama-server's
-    --vocab-only output changes, adjust the prefix filter here.
+    Reading the raw token-string blob (gguf field parts) gives an exact comparison
+    without launching llama-server. Falls back to False on any read error (safe).
     """
-    import subprocess
+    import gguf
 
-    def dump(path: str) -> list[str]:
-        r = subprocess.run(
-            ["llama-server", "--model", path, "--vocab-only", "--log-disable"],
-            capture_output=True,
-            text=True,
-            timeout=180,
-        )
-        lines = (r.stdout + r.stderr).splitlines()
-        return [ln for ln in lines if ln.startswith("tok: ")]
+    def sig(path: str) -> tuple | None:
+        try:
+            r = gguf.GGUFReader(path)
+            arch = r.get_field("general.architecture")
+            toks = r.get_field("tokenizer.ggml.tokens")
+            if arch is None or toks is None:
+                return None
+            return (bytes(arch.parts[-1]), len(toks.data), bytes(toks.parts[-1]))
+        except Exception:
+            return None
 
-    return dump(target_gguf) == dump(draft_gguf)
+    return sig(target_gguf) is not None and sig(target_gguf) == sig(draft_gguf)

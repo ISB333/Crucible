@@ -36,7 +36,7 @@ from web_search_advisor import (  # type: ignore[import-not-found]  # noqa: E402
 )
 
 from crucible import AdvisorPolicy, Task, budgets, run  # noqa: E402
-from crucible.budgets import RunBudget  # noqa: E402
+from crucible.budgets import RunBudget, parse_duration  # noqa: E402
 
 ap = argparse.ArgumentParser(description="CPU inference speed search via Crucible")
 ap.add_argument("--model", default=_default_worker(), help="worker (Gemini) model")
@@ -51,6 +51,19 @@ ap.add_argument("--db", default=str(SCRIPT_DIR / "speed.db"))
 ap.add_argument("--episodes", type=int, default=6, help="episodes per worker")
 ap.add_argument("--edits", type=int, default=20, help="max edits per episode")
 ap.add_argument("--turns", type=int, default=10, help="max turns per episode")
+ap.add_argument(
+    "--wall-clock",
+    default="2h",
+    help="hard wall-clock cap for the whole run (e.g. '8h', '30m', '45s'). Default 2h. "
+    "For an overnight run, set e.g. '10h' — without this the run stops at 2h regardless.",
+)
+ap.add_argument(
+    "--plateau-patience",
+    type=int,
+    default=3,
+    help="stop a worker after N episodes with no rank improvement. Default 3. "
+    "Raise (e.g. 10-12) for a long exploratory run so it keeps searching past plateaus.",
+)
 args = ap.parse_args()
 
 if not (os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")):
@@ -104,7 +117,11 @@ result = run(
     model=args.model,
     workers=args.workers,
     episode=budgets(edits=args.edits, turns=args.turns),
-    run_budget=RunBudget(episodes_per_worker=args.episodes, plateau_patience=3),
+    run_budget=RunBudget(
+        episodes_per_worker=args.episodes,
+        plateau_patience=args.plateau_patience,
+        wall_clock_s=parse_duration(args.wall_clock),
+    ),
     sandbox=args.sandbox,
     db=args.db,
     advisor=advisor,

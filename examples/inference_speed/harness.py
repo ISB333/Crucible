@@ -43,6 +43,17 @@ class Config:
     draft_max: int = 4
     n_concurrent: int = 1
     cache_policy: str = "on"  # "on" | "off"
+    # KV-cache quantization (the decode-bandwidth lever for a bandwidth-bound model).
+    # "" = emit no flag = llama-server default = the frozen baseline. Otherwise one of
+    # the llama.cpp KV types. q8_0 / f8 are near-lossless on short probes and cut KV
+    # read bandwidth ~2x; q4_0 is smaller but the lossless gate will reject it if it
+    # diverges from the greedy reference. The gate, not confidence, decides.
+    cache_type_k: str = ""
+    cache_type_v: str = ""
+    numa: str = ""  # "" = off; else distribute|shuffle|isolate (single-socket VPS = neutral)
+    # Dedicated threads for the self-spec draft so it stops stealing the target's memory
+    # bandwidth. None = inherit. Lower = gentler draft (less contention, slower proposal).
+    draft_threads: int | None = None
 
     def __post_init__(self) -> None:
         if not 1 <= self.n_threads <= _VPS_CORES:
@@ -57,6 +68,18 @@ class Config:
             raise ValueError("n_concurrent must be >= 1")
         if self.cache_policy not in ("on", "off"):
             raise ValueError("cache_policy must be 'on' or 'off'")
+        _KV_TYPES = {
+            "", "f32", "f16", "bf16", "q8_0", "q4_0", "q4_1", "q5_0", "q5_1",
+            "q6_0", "iq4_nl", "f8", "q8_1",
+        }
+        if self.cache_type_k not in _KV_TYPES:
+            raise ValueError(f"cache_type_k must be one of {sorted(_KV_TYPES)}")
+        if self.cache_type_v not in _KV_TYPES:
+            raise ValueError(f"cache_type_v must be one of {sorted(_KV_TYPES)}")
+        if self.numa and self.numa not in ("distribute", "shuffle", "isolate", "numactl"):
+            raise ValueError("numa must be '', 'distribute', 'shuffle', 'isolate', or 'numactl'")
+        if self.draft_threads is not None and not 1 <= self.draft_threads <= _VPS_CORES:
+            raise ValueError(f"draft_threads must be None or in [1, {_VPS_CORES}]")
         dm = self.draft_max
         if dm < 1:
             dm = 1
@@ -92,6 +115,14 @@ class Config:
                 "--spec-draft-n-max",
                 str(self.draft_max),
             ]
+            if self.draft_threads is not None:
+                args += ["--spec-draft-threads", str(self.draft_threads)]
+        if self.cache_type_k:
+            args += ["--cache-type-k", self.cache_type_k]
+        if self.cache_type_v:
+            args += ["--cache-type-v", self.cache_type_v]
+        if self.numa:
+            args += ["--numa", self.numa]
         if self.cache_policy == "off":
             args.append("--no-context-shift")
         return args

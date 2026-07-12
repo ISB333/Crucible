@@ -30,6 +30,10 @@ def _default_advisor() -> str | None:
 
 
 from speed_verifier import SpeedQualityVerifier  # type: ignore[import-not-found]  # noqa: E402
+from web_search import EXTRA_TOOLS, TOOL_HANDLERS  # type: ignore[import-not-found]  # noqa: E402
+from web_search_advisor import (  # type: ignore[import-not-found]  # noqa: E402
+    make_web_search_advisor_factory,
+)
 
 from crucible import AdvisorPolicy, Task, budgets, run  # noqa: E402
 from crucible.budgets import RunBudget  # noqa: E402
@@ -63,12 +67,18 @@ if (
     os.environ["OPENAI_API_KEY"] = os.environ["OLLAMA_API_KEY"]
 
 advisor = None
+advisor_factory = None
 if args.advisor:
     advisor = AdvisorPolicy(
         model=args.advisor,
         max_calls_per_run=args.advisor_max_calls,
         fail_streak=args.advisor_fail_streak,
     )
+    # Ollama-Cloud shepherd: an agentic WebSearchAdvisor (GLM-5.2 + web_search tool).
+    if not args.advisor.startswith(("claude", "gemini")) and os.environ.get("OLLAMA_API_KEY"):
+        advisor_factory = make_web_search_advisor_factory(
+            args.advisor, base_url="https://ollama.com/v1"
+        )
 
 # Build the task from a curated file list: Task.from_path(dir) would include
 # __pycache__/*.pyc (binary, breaks read_text) and speed.db. Exclude those.
@@ -98,6 +108,9 @@ result = run(
     sandbox=args.sandbox,
     db=args.db,
     advisor=advisor,
+    advisor_factory=advisor_factory,
+    extra_tools=EXTRA_TOOLS,
+    tool_handlers=TOOL_HANDLERS,
 )
 
 artifact = result.solution or result.best_partial

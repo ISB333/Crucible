@@ -134,6 +134,7 @@ def test_annotate_lessons_sanitizes_hole_tokens(make_ctx) -> None:
 
 # --- advisor consult tests (Task 4) ---
 
+
 def consult(question: str) -> ToolCall:
     return ToolCall(id="9", name="consult_advisor", args={"question": question})
 
@@ -141,13 +142,19 @@ def consult(question: str) -> ToolCall:
 def _episode(make_ctx, script, advisor=None, policy=None, cap=0):
     from crucible.budgets import EpisodeBudget
     from crucible.integrity import Composite, DenyTokens, ImmutableRegions
-    from crucible.verify import RunContext
 
     a = Artifact.from_files({"problem.py": PROBLEM})
     integrity = Composite(checks=(ImmutableRegions.freeze(a), DenyTokens()))
     out, _ = run_episode(
-        a, StubVerifier(), make_ctx(), ScriptedSession(script),
-        EpisodeBudget(), integrity, advisor=advisor, policy=policy, advisor_cap=cap,
+        a,
+        StubVerifier(),
+        make_ctx(),
+        ScriptedSession(script),
+        EpisodeBudget(),
+        integrity,
+        advisor=advisor,
+        policy=policy,
+        advisor_cap=cap,
     )
     return out
 
@@ -178,7 +185,10 @@ def test_engine_trigger_on_fail_streak(make_ctx) -> None:
     bad = ToolCall(
         id="3",
         name="write_region",
-        args={"name": "solution", "content": "def solve() -> int:\n    raise NotImplementedError  # still wrong"},
+        args={
+            "name": "solution",
+            "content": "def solve() -> int:\n    raise NotImplementedError  # still wrong",
+        },
     )
     out = _episode(make_ctx, [[bad], [bad], []], advisor=adv, policy=pol, cap=1)
     assert out.advisor_calls == 1
@@ -220,8 +230,7 @@ def test_advisor_consult_event_recorded(tmp_path, make_ctx) -> None:
     assert result.episodes == 1
     # Check advisor consult event was recorded by querying events table directly
     events = store._conn.execute(
-        "SELECT kind, payload_json FROM events WHERE run_id = ? ORDER BY id",
-        (run_id,)
+        "SELECT kind, payload_json FROM events WHERE run_id = ? ORDER BY id", (run_id,)
     ).fetchall()
     advisor_events = [(k, json.loads(p)) for k, p in events if k == "advisor_consult"]
     assert len(advisor_events) == 1
@@ -230,3 +239,41 @@ def test_advisor_consult_event_recorded(tmp_path, make_ctx) -> None:
     assert payload["advice"] == "try returning 42"
     assert payload["cost_usd"] == pytest.approx(0.01)
     assert payload["ok"] is True
+
+
+def test_handle_call_dispatches_custom_tool_handler(make_ctx):
+    """A tool_handlers entry is dispatched, returns its output, edits nothing."""
+    from crucible.worker import _handle_call
+
+    art = Artifact.from_files({"problem.py": PROBLEM})
+    ctx = make_ctx()
+
+    def handler(args: dict) -> str:
+        return f"searched {args.get('query', '')}"
+
+    call = ToolCall(id="9", name="web_search", args={"query": "spec decoding cpu"})
+    result, artifact, applied, verdict = _handle_call(
+        call, art, StubVerifier(), ctx, [], None, {"web_search": handler}
+    )
+    assert applied is False
+    assert verdict is None
+    assert "searched spec decoding cpu" in result.content
+    # artifact unchanged (no edit)
+    assert artifact.files["problem.py"] == art.files["problem.py"]
+
+
+def test_handle_call_custom_tool_error_does_not_crash(make_ctx):
+    from crucible.worker import _handle_call
+
+    art = Artifact.from_files({"problem.py": PROBLEM})
+    ctx = make_ctx()
+
+    def boom(_args: dict) -> str:
+        raise RuntimeError("tavily down")
+
+    call = ToolCall(id="9", name="web_search", args={"query": "x"})
+    result, _artifact, applied, verdict = _handle_call(
+        call, art, StubVerifier(), ctx, [], None, {"web_search": boom}
+    )
+    assert applied is False
+    assert "tool 'web_search' error" in result.content

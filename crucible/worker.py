@@ -63,6 +63,7 @@ def _handle_call(
     ctx: RunContext,
     lessons: list[str],
     consult: "Callable[[str, str], str] | None",
+    tool_handlers: "dict[str, Callable[[dict], str]] | None" = None,
 ) -> tuple[ToolResult, Artifact, bool, Verdict | None]:
     # Validate model output before acting on it: coerce args defensively.
     if call.name == "record_lesson":
@@ -84,6 +85,12 @@ def _handle_call(
         er = write_region(
             artifact, str(call.args.get("name", "")), str(call.args.get("content", ""))
         )
+    elif tool_handlers and call.name in tool_handlers:
+        try:
+            out = tool_handlers[call.name](dict(call.args))
+        except Exception as exc:  # a tool error must not crash the episode
+            out = f"tool {call.name!r} error: {exc!r}"
+        return ToolResult(call.id, str(out)), artifact, False, None
     else:
         return ToolResult(call.id, f"unknown tool {call.name!r}"), artifact, False, None
     if not er.applied:
@@ -102,6 +109,7 @@ def run_episode(
     advisor: "Advisor | None" = None,
     policy: "AdvisorPolicy | None" = None,
     advisor_cap: int = 0,
+    tool_handlers: "dict[str, Callable[[dict], str]] | None" = None,
 ) -> tuple[EpisodeOutcome, LLMSession]:
     start_artifact = artifact
     lessons: list[str] = []
@@ -144,7 +152,7 @@ def run_episode(
         last_applied_idx: int | None = None
         for call in calls:
             result, artifact, applied, verdict = _handle_call(
-                call, artifact, verifier, ctx, lessons, use_consult
+                call, artifact, verifier, ctx, lessons, use_consult, tool_handlers
             )
             results.append(result)
             if applied and verdict is not None:
@@ -277,6 +285,7 @@ def run_worker(
     started_at: float,
     advisor_factory: "Callable[[], Advisor] | None" = None,
     advisor_policy: "AdvisorPolicy | None" = None,
+    tool_handlers: "dict[str, Callable[[dict], str]] | None" = None,
 ) -> WorkerResult:
     """One independent Ralph loop. Standalone callable by design: this is the seam
     P1.3 plugs into the reactor's _transform in v2."""
@@ -318,6 +327,7 @@ def run_worker(
             advisor=advisor,
             policy=advisor_policy,
             advisor_cap=cap,
+            tool_handlers=tool_handlers,
         )
         episodes += 1
         cost += out.cost_usd

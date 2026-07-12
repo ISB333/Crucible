@@ -60,6 +60,9 @@ def run(
     db: str | Path = "crucible.db",
     session_factory: Callable[[int, int], LLMSession] | None = None,  # test seam
     advisor: str | AdvisorPolicy | None = None,  # LLM shepherding: model name or policy
+    extra_tools: "list[dict] | None" = None,  # extra tool schemas exposed to the worker
+    tool_handlers: "dict[str, Callable[[dict], str]] | None" = None,  # their execution handlers
+    advisor_factory: "Callable[[], Advisor] | None" = None,  # override the policy-built advisor
 ) -> Result:
     """Run a verifier-grounded multi-agent search (PRD §9).
 
@@ -103,13 +106,13 @@ def run(
     elif advisor is not None:
         raise ValueError(f"advisor must be str, AdvisorPolicy, or None, got {type(advisor).__name__}")
 
-    # Build advisor factory if policy is set
-    advisor_factory: Callable[[], Advisor] | None = None
-    if advisor_policy is not None:
+    # Build advisor factory from policy if the caller didn't supply one
+    eff_advisor_factory = advisor_factory
+    if eff_advisor_factory is None and advisor_policy is not None:
         def _adv_factory(_pol=advisor_policy, _bu=base_url) -> Advisor:
             from crucible.advisor import LLMAdvisor
             return LLMAdvisor(policy=_pol, base_url=_bu)
-        advisor_factory = _adv_factory
+        eff_advisor_factory = _adv_factory
 
     sf: Callable[[int, int], LLMSession]
     if session_factory is not None:
@@ -121,7 +124,7 @@ def run(
         _model = model
 
         def _make(*_: int) -> LLMSession:  # type: ignore[unused-argument]
-            return make_session(_model, base_url=_base_url)
+            return make_session(_model, base_url=_base_url, extra_tools=extra_tools or ())
 
         sf = _make
 
@@ -135,6 +138,7 @@ def run(
         workers=workers,
         episode_budget=episode,
         run_budget=run_budget,
-        advisor_factory=advisor_factory,
+        advisor_factory=eff_advisor_factory,
         advisor_policy=advisor_policy,
+        tool_handlers=tool_handlers,
     )

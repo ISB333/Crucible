@@ -51,6 +51,7 @@ async def search(
     run_budget: RunBudget | None = None,
     advisor_factory: "Callable[[], Advisor] | None" = None,
     advisor_policy: "AdvisorPolicy | None" = None,
+    tool_handlers: "dict[str, Callable[[dict], str]] | None" = None,
 ) -> SearchResult:
     if workers < 1:
         raise ValueError(f"workers must be >= 1, got {workers}")
@@ -107,6 +108,7 @@ async def search(
             started_at=started_at,
             advisor_factory=advisor_factory,
             advisor_policy=advisor_policy,
+            tool_handlers=tool_handlers,
         )
 
     tasks = [asyncio.create_task(asyncio.to_thread(one, i)) for i in range(workers)]

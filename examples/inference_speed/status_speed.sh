@@ -39,7 +39,7 @@ FROM verdicts v
 JOIN artifact_versions a ON v.artifact_version_id=a.id
 JOIN episodes e ON a.episode_id=e.id
 JOIN workers w ON e.worker_id=w.id
-WHERE w.run_id=$RID AND v.kind='Scored'"
+WHERE w.run_id=$RID AND lower(v.kind)='scored'"
 
 echo "--- latest 4 verdicts (what's being tried / rejected) ---"
 sqlite3 -column "$DB" "

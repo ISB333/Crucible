@@ -96,6 +96,14 @@ The best configs stack all four levers — Q3 self-spec draft + KV-cache `q8_0` 
 `n_concurrent=8`, `draft_max=16`, KV `q8_0`, `draft_threads=6`; best aggregate (10.15):
 Q3, `n_threads=10`, `n_concurrent=12`, `draft_max=16`, KV `q8_0`, `draft_threads=2`.
 
+**Measurement variance (honesty note):** tok/s on a shared VPS is noisy — ±15-25%
+run-to-run from page-cache warmth and background load. The 7.67 / 10.15 figures are
+the *peak observed* during the search; the final incumbent config (Q3, `n_threads=10`,
+`n_concurrent=12`, `draft_threads=2`) re-verified independently at single 6.19 /
+aggregate 7.79, lossless. The peaks were real measurements; they are not stable
+reproducible numbers. The 3.6× / 5.2× ratios over a baseline measured the same way
+are the robust claim, not the absolute figures.
+
 **The non-obvious finding — fewer threads = faster single-stream.** The 9B decode is
 memory-bandwidth-bound, not compute-bound, so 12 threads contending on the memory bus
 is *slower* than 6 threads each getting more bandwidth. The search found this

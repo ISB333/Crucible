@@ -18,3 +18,7 @@ test_verifier.py
 example_reasoning.py
 .env
 nohup.out
+
+# inference_speed runtime artifacts
+examples/inference_speed/*.log
+examples/inference_speed/*.pid

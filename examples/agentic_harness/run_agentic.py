@@ -145,10 +145,14 @@ if not args.skip_reverify:
     try:
         # Copy agent_contract.py so the import resolves from the temp workspace
         shutil.copy2(SCRIPT_DIR / "agent_contract.py", tmp_ws / "agent_contract.py")
-        # Write the best harness: import line + solve body from the artifact
+        # Write the best harness: frozen def-solve signature + editable body from the artifact.
+        # The region text (solve_text) is ONLY the indented body — the def line is frozen
+        # outside the region so the worker can't drop it.
         best_text = solve_text
         (tmp_ws / "harness.py").write_text(
+            "from pathlib import Path\n"
             "from agent_contract import Task, LLM, Tools\n\n"
+            "def solve(task: Task, workdir: Path, llm: LLM, tools: Tools) -> None:\n"
             + best_text
         )
         v = AgenticCodingVerifier(

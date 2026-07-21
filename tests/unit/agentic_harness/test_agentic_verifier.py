@@ -29,9 +29,11 @@ from crucible.verify import Fail, Ok, Partial, Scored
 # ---------------------------------------------------------------------------
 
 def _artifact(solve_body: str) -> Artifact:
-    """Build a harness artifact with the given solve-region body."""
+    """Build a harness artifact with the given solve-region body (indented, no def line)."""
     harness = (
-        "from agent_contract import Task, LLM, Tools\n"
+        "from pathlib import Path\n"
+        "from agent_contract import Task, LLM, Tools\n\n"
+        "def solve(task: Task, workdir: Path, llm: LLM, tools: Tools) -> None:\n"
         "# crucible:region start name=solve\n"
         f"{solve_body}\n"
         "# crucible:region end\n"
@@ -109,7 +111,7 @@ _ORIG_SEARCH_SUBSET = AgenticCodingVerifier._search_subset
 def test_hole_unfilled_returns_partial(tmp_path):
     """A solve region still containing raise NotImplementedError → Partial."""
     v = _make_verifier(tmp_path)
-    art = _artifact("def solve(t, w, l, tools):\n    raise NotImplementedError\n")
+    art = _artifact("    raise NotImplementedError")
     result = v.verify(art, _Ctx(tmp_path))
     assert isinstance(result, Partial), f"expected Partial, got {type(result).__name__}"
     assert "NotImplementedError" in result.feedback
@@ -123,9 +125,10 @@ def test_harness_import_failure_returns_fail(tmp_path):
     """A harness that fails to import → Fail."""
     v = _make_verifier(tmp_path)
     harness = (
-        "import nonexistent_module_xyz\n"
+        "import nonexistent_module_xyz\n\n"
+        "def solve(task, workdir, llm, tools):\n"
         "# crucible:region start name=solve\n"
-        "def solve(task, workdir, llm, tools):\n    pass\n"
+        "    pass\n"
         "# crucible:region end\n"
     )
     art = Artifact.from_files({"harness.py": harness, "agent_contract.py": "x = 1\n"})
@@ -144,7 +147,7 @@ def test_runner_crashes_returns_fail(tmp_path, monkeypatch):
         raise RuntimeError("boom")
 
     v = _make_verifier(tmp_path, runner=crash_runner)
-    art = _artifact("def solve(task, workdir, llm, tools):\n    pass\n")
+    art = _artifact("    pass")
     monkeypatch.setattr(AgenticCodingVerifier, "_search_subset", lambda self: _fake_tasks())
     result = v.verify(art, _Ctx(tmp_path))
     assert isinstance(result, Fail), f"expected Fail, got {type(result).__name__}"
@@ -161,7 +164,7 @@ def test_rate_meets_threshold_returns_ok(tmp_path, monkeypatch):
         return {"pass": 2, "n": 10}  # 0.2 >= 0.0 + 0.10
 
     v = _make_verifier(tmp_path, baseline_rate=0.0, runner=good_runner)
-    art = _artifact("def solve(task, workdir, llm, tools):\n    pass\n")
+    art = _artifact("    pass")
     monkeypatch.setattr(AgenticCodingVerifier, "_search_subset", lambda self: _fake_tasks())
     result = v.verify(art, _Ctx(tmp_path))
     assert isinstance(result, Ok), f"expected Ok, got {type(result).__name__}"
@@ -177,7 +180,7 @@ def test_rate_below_threshold_returns_scored(tmp_path, monkeypatch):
         return {"pass": 0, "n": 10}  # 0.0 < 0.0 + 0.10
 
     v = _make_verifier(tmp_path, baseline_rate=0.0, runner=bad_runner)
-    art = _artifact("def solve(task, workdir, llm, tools):\n    pass\n")
+    art = _artifact("    pass")
     monkeypatch.setattr(AgenticCodingVerifier, "_search_subset", lambda self: _fake_tasks())
     result = v.verify(art, _Ctx(tmp_path))
     assert isinstance(result, Scored), f"expected Scored, got {type(result).__name__}"
@@ -193,7 +196,7 @@ def test_sys_path_fix_allows_agent_contract_import(tmp_path):
     """A harness doing `from agent_contract import ...` loads successfully
     when agent_contract.py is in the materialized workspace (sys.path fix)."""
     v = _make_verifier(tmp_path)
-    art = _artifact("def solve(task, workdir, llm, tools):\n    pass\n")
+    art = _artifact("    pass")
     ws = _Ctx(tmp_path).materialize(art)
     harness_mod = v._load_harness(ws)
     # The harness loaded without ImportError — the sys.path fix worked.

@@ -1,4 +1,5 @@
-"""The agent's harness. The worker edits ONLY the `solve` body (the crucible:region).
+"""The agent's harness. The worker edits ONLY the solve BODY (the crucible:region).
+The `def solve(...)` signature is FROZEN (outside the region) so the worker can't drop it.
 
 Wave 0 baseline: one-shot — read the spec, ask Tess to write ONLY the function body
 (indented Python, no signature, no explanation), write the body to skeleton.py.
@@ -10,8 +11,8 @@ from pathlib import Path
 from agent_contract import Task, LLM, Tools
 
 
-# crucible:region start name=solve
 def solve(task: Task, workdir: Path, llm: LLM, tools: Tools) -> None:
+# crucible:region start name=solve
     """Minimal baseline: ask Tess to complete the skeleton in one shot.
 
     The contract is:

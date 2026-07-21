@@ -14,11 +14,21 @@ def load_tasks(subset: str = "hard") -> dict[str, dict]:
     return get_bigcodebench(subset=subset)
 
 
-def check_solution(task_id: str, solution_code: str, timeout: float = 10.0) -> bool:
+def check_solution(
+    task_id: str,
+    solution_code: str,
+    timeout: float = 10.0,
+    max_as_limit: float = 30 * 1024,
+    max_data_limit: float = 30 * 1024,
+    max_stack_limit: float = 10,
+) -> bool:
     """Run solution_code against the task's hidden tests in BigCodeBench's guarded env.
 
     Returns True only if the hidden tests pass. The guarded env (reliability_guard)
     prevents the solution from reading tests / monkeypatching the framework.
+
+    Resource limits default to BigCodeBench's official values (30*1024 MB AS/data,
+    10 MB stack) — passing 0 would prevent any allocation, making every solution fail.
 
     Real untrusted_check signature (discovered via inspect):
         untrusted_check(
@@ -41,9 +51,9 @@ def check_solution(task_id: str, solution_code: str, timeout: float = 10.0) -> b
         code=full_code,
         test_code=task["test"],
         entry_point=task["entry_point"],
-        max_as_limit=0,
-        max_data_limit=0,
-        max_stack_limit=0,
+        max_as_limit=max_as_limit,
+        max_data_limit=max_data_limit,
+        max_stack_limit=max_stack_limit,
         min_time_limit=0.1,
         gt_time_limit=timeout,
     )

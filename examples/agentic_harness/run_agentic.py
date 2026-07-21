@@ -1,15 +1,16 @@
-"""Crucible search over the agent harness. Gemini rewrites harness.py:solve;
-AgenticCodingVerifier measures Tess on a BigCodeBench subset; GLM-5.2 shepherds.
+"""Crucible search over the agent harness. Worker rewrites harness.py:solve;
+AgenticCodingVerifier measures Tess on a BigCodeBench subset; optional shepherd.
 
-Usage (GOOGLE_API_KEY + OLLAMA_API_KEY from .env):
+Usage (GOOGLE_API_KEY for Gemini workers; OLLAMA_API_KEY for GLM/Ollama-Cloud workers):
   uv run python examples/agentic_harness/run_agentic.py
-  uv run python examples/agentic_harness/run_agentic.py --workers 1 --episodes 1 \
-      --edits 1 --turns 4 --wall-clock 45m --skip-reverify
+  uv run python examples/agentic_harness/run_agentic.py --model glm-5.2:cloud --no-advisor \
+      --workers 3 --episodes 6 --edits 4 --turns 8 --wall-clock 10h
 
 Dry-run (fastest possible validation):
   bash examples/agentic_harness/serve_tess.sh &
   uv run python examples/agentic_harness/run_agentic.py \
-      --workers 1 --episodes 1 --edits 1 --turns 4 --wall-clock 45m --skip-reverify
+      --model glm-5.2:cloud --no-advisor \
+      --workers 1 --episodes 1 --edits 1 --turns 4 --wall-clock 30m --skip-reverify
   bash examples/agentic_harness/serve_tess.sh --stop
 """
 import argparse
@@ -31,9 +32,12 @@ from crucible import AdvisorPolicy, Task, budgets, run  # noqa: E402
 from crucible.budgets import RunBudget, parse_duration  # noqa: E402
 
 ap = argparse.ArgumentParser(description="Crucible search over the agentic coding harness")
-ap.add_argument("--model", default="gemini-3.1-flash-lite", help="worker (Gemini) model")
+ap.add_argument("--model", default="gemini-3.1-flash-lite",
+                help="worker model (gemini-* uses Gemini; glm-* uses Ollama Cloud; claude-* uses Anthropic)")
 ap.add_argument("--advisor", default=os.environ.get("OLLAMA_MODEL"),
-                help="shepherd model (e.g. glm-5.2:cloud)")
+                help="shepherd model (e.g. glm-5.2:cloud); ignored when --no-advisor is set")
+ap.add_argument("--no-advisor", action="store_true",
+                help="disable the shepherd entirely (no advisor consults)")
 ap.add_argument("--advisor-max-calls", type=int, default=8)
 ap.add_argument("--advisor-fail-streak", type=int, default=3)
 ap.add_argument("--workers", type=int, default=3)
@@ -50,21 +54,43 @@ ap.add_argument("--skip-reverify", action="store_true",
                 help="skip the independent re-verification on the full 25-task subset")
 args = ap.parse_args()
 
-if not (os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")):
-    sys.exit("Error: GOOGLE_API_KEY (or GEMINI_API_KEY) not set. Add it to .env or export it.")
+def _is_ollama_cloud(model: str | None) -> bool:
+    """True for models routed through Ollama Cloud (non-Gemini, non-Claude)."""
+    return bool(model and not model.startswith(("claude", "gemini")))
 
-# Route a non-Gemini/Claude shepherd through Ollama Cloud when OLLAMA_API_KEY is set.
-if (
-    args.advisor
-    and not args.advisor.startswith(("claude", "gemini"))
-    and os.environ.get("OLLAMA_API_KEY")
-):
-    os.environ.setdefault("OPENAI_BASE_URL", "https://ollama.com/v1")
+
+# API-key guard: require GOOGLE_API_KEY for Gemini workers, OLLAMA_API_KEY for Ollama-Cloud workers.
+if not args.no_advisor and _is_ollama_cloud(args.advisor):
+    # Shepherd routed through Ollama Cloud — need OLLAMA_API_KEY
+    if not os.environ.get("OLLAMA_API_KEY"):
+        sys.exit("Error: OLLAMA_API_KEY not set (required for Ollama-Cloud advisor). "
+                 "Add it to .env or export it.")
+elif _is_ollama_cloud(args.model):
+    # Worker routed through Ollama Cloud — need OLLAMA_API_KEY
+    if not os.environ.get("OLLAMA_API_KEY"):
+        sys.exit("Error: OLLAMA_API_KEY not set (required for Ollama-Cloud worker). "
+                 "Add it to .env or export it.")
+else:
+    # Gemini or Claude worker — need Google/Anthropic key
+    if not (os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")):
+        sys.exit("Error: GOOGLE_API_KEY (or GEMINI_API_KEY) not set. "
+                 "Add it to .env or export it.")
+
+# Route any non-Gemini/Claude model through Ollama Cloud when OLLAMA_API_KEY is set.
+# This covers both the worker (--model) and the advisor (--advisor).
+needs_ollama = _is_ollama_cloud(args.model) or (
+    not args.no_advisor and _is_ollama_cloud(args.advisor)
+)
+if needs_ollama and os.environ.get("OLLAMA_API_KEY"):
+    os.environ["OPENAI_BASE_URL"] = "https://ollama.com/v1"
     os.environ["OPENAI_API_KEY"] = os.environ["OLLAMA_API_KEY"]
 
 advisor = None
 advisor_factory = None
-if args.advisor:
+if args.no_advisor:
+    # Explicitly disabled — no shepherd at all
+    pass
+elif args.advisor:
     advisor = AdvisorPolicy(
         model=args.advisor,
         max_calls_per_run=args.advisor_max_calls,
@@ -88,7 +114,7 @@ _task_files = tuple(
             for p in f.relative_to(SCRIPT_DIR).parts
         )
         and f.suffix not in (".pyc", ".db")
-        and f.name not in ("serve.log", "serve.pid")
+        and f.name not in ("serve.log", "serve.pid", "overnight.log", "overnight.pid")
     )
 )
 

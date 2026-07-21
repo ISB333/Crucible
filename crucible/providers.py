@@ -190,7 +190,7 @@ class OpenAICompatSession:
         else:
             api_key = os.environ.get("OPENAI_API_KEY", "ollama")
 
-        self._client = OpenAI(base_url=base_url, api_key=api_key, max_retries=2)
+        self._client = OpenAI(base_url=base_url, api_key=api_key, max_retries=2, timeout=300.0)
         self._model_name = model
         self._model = model
         self._tools = [*TOOL_SCHEMAS, *extra_tools]

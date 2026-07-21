@@ -267,7 +267,13 @@ class GeminiSession:
         api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
         if not api_key:
             raise ValueError("GOOGLE_API_KEY or GEMINI_API_KEY must be set in environment")
-        self._client = genai.Client(api_key=api_key)  # type: ignore[reportPrivateImportUsage]
+        # 180s per-request timeout (ms). The SDK default is None (infinite) — a
+        # transient Gemini stall would hang the whole run until wall-clock. With
+        # the 3-attempt retry below, a stall now fails fast and recovers instead.
+        self._client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(timeout=180_000),
+        )  # type: ignore[reportPrivateImportUsage]
         self._model_name = model
         self._model = model
         self._max_tokens = max_tokens
@@ -333,11 +339,15 @@ class GeminiSession:
                 response = self._client.models.generate_content(
                     model=self._model,
                     contents=gemini_history,
-                    config={
-                        "max_output_tokens": self._max_tokens,
-                        "tool_config": {"function_calling_config": {"mode": "auto"}},
-                        "tools": [self._types.Tool(function_declarations=function_declarations)],
-                    },
+                    config=self._types.GenerateContentConfig(
+                        max_output_tokens=self._max_tokens,
+                        tool_config=self._types.ToolConfig(
+                            function_calling_config=self._types.FunctionCallingConfig(
+                                mode=self._types.FunctionCallingConfigMode.AUTO,
+                            ),
+                        ),
+                        tools=[self._types.Tool(function_declarations=function_declarations)],
+                    ),
                 )
                 break
             except Exception as exc:
@@ -355,12 +365,12 @@ class GeminiSession:
         if response.candidates:
             candidate = response.candidates[0]
             if candidate.content:
-                for part in candidate.content.parts:
+                for part in candidate.content.parts or []:
                     if part.function_call:
                         call = ToolCall(
-                            id=part.function_call.id,
-                            name=part.function_call.name,
-                            args=part.function_call.args,
+                            id=part.function_call.id or "",
+                            name=part.function_call.name or "",
+                            args=part.function_call.args or {},
                         )
                         calls.append(call)
                         # Track call ID to function name for later responses
@@ -371,7 +381,7 @@ class GeminiSession:
         if response.candidates:
             candidate = response.candidates[0]
             if candidate.content:
-                for part in candidate.content.parts:
+                for part in candidate.content.parts or []:
                     model_parts.append(part)
         self._history.append({"role": "model", "parts": model_parts})
         return calls
@@ -443,7 +453,7 @@ class _AnthropicAdvisor:
         )
         self._in += resp.usage.input_tokens
         self._out += resp.usage.output_tokens
-        return "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
+        return "".join(getattr(b, "text", "") for b in resp.content if getattr(b, "type", None) == "text")
 
     @property
     def cost_usd(self) -> float:
@@ -484,7 +494,13 @@ class _GeminiAdvisor:
         api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
         if not api_key:
             raise ValueError("GOOGLE_API_KEY or GEMINI_API_KEY must be set in environment")
-        self._client = genai.Client(api_key=api_key)  # type: ignore[reportPrivateImportUsage]
+        # 180s per-request timeout (ms). The SDK default is None (infinite) — a
+        # transient Gemini stall would hang the whole run until wall-clock. With
+        # the 3-attempt retry in GeminiSession, a stall now fails fast and recovers instead.
+        self._client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(timeout=180_000),
+        )  # type: ignore[reportPrivateImportUsage]
         self._model = model
         self._max_tokens = max_tokens
         self._types = types

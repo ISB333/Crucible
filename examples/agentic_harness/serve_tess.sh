@@ -1,31 +1,33 @@
 #!/usr/bin/env bash
-# Serve the 9B with the search's best config. OpenAI-compatible endpoint.
+# Serve Tess-4-9B with the best-aggregate config from the inference speed search.
+# OpenAI-compatible endpoint for agentic harness task evals.
 #
-#   bash examples/inference_speed/serve_best.sh            # single-stream profile (one user, ~7.7 tok/s)
-#   bash examples/inference_speed/serve_best.sh --agg     # aggregate profile (many users, ~10 tok/s total)
-#   bash examples/inference_speed/serve_best.sh --ngram   # ngram/lookup decoding — NO draft model (~4.5GB less RAM)
-#   bash examples/inference_speed/serve_best.sh --port 8080
-#   bash examples/inference_speed/serve_best.sh --stop
+#   bash examples/agentic_harness/serve_tess.sh            # agg profile (default — 12 concurrent, ~10 tok/s total)
+#   bash examples/agentic_harness/serve_tess.sh --single   # single-stream profile (one user, ~7.7 tok/s)
+#   bash examples/agentic_harness/serve_tess.sh --ngram   # ngram/lookup decoding — NO draft model (~4.5GB less RAM)
+#   bash examples/agentic_harness/serve_tess.sh --port 9090
+#   bash examples/agentic_harness/serve_tess.sh --stop
 #
-# The model is Qwen3.5-9B-Q4_K_M + a Q3_K_M self-spec draft + KV-cache q8_0, the
-# config the verifier-grounded search found lossless (3.6x single / 5.2x aggregate
-# over baseline). Quality is byte-identical to the unoptimized model (greedy match).
+# Tess-4-9B is Qwen-based (same 248K tokenizer), so the speed search's best configs
+# transfer directly. Q3_K_M self-spec draft = same tokenizer = lossless speculative
+# decoding. KV-cache q8_0 saves VRAM with negligible quality loss (greedy-match
+# verified). Quality is byte-identical to the unoptimized model.
 set -euo pipefail
 
-# Defaults = the Qwen3.5-9B best config. Override via env to test another model
-# with the same best settings, e.g. Tess-4-9B (qwen35 arch, same 248K tokenizer —
-# settings transfer; draft is a Q3_K_M requant of the same file → lossless):
-#   MODEL=/home/isb/models/Tess-4-9B-Q4_K_M.gguf \
-#   DRAFT=/home/isb/models/Tess-4-9B-Q3_K_M.gguf bash serve_best.sh
-MODEL=${MODEL:-/home/isb/models/Qwen3.5-9B-Q4_K_M.gguf}
-DRAFT=${DRAFT:-/home/isb/models/Qwen3.5-9B-Q3_K_M.gguf}
+# Tess-4-9B with best-aggregate config. Override via env to test another model
+# with the same best settings (e.g. Qwen3.5-9B — same arch, same tokenizer):
+#   MODEL=/home/isb/models/Qwen3.5-9B-Q4_K_M.gguf \
+#   DRAFT=/home/isb/models/Qwen3.5-9B-Q3_K_M.gguf bash serve_tess.sh
+MODEL=${MODEL:-/home/isb/models/Tess-4-9B-Q4_K_M.gguf}
+DRAFT=${DRAFT:-/home/isb/models/Tess-4-9B-Q3_K_M.gguf}
 PORT=9090
-PROFILE=single
-PIDF=/home/isb/models/Crucible/examples/inference_speed/serve.pid
-LOG=/home/isb/models/Crucible/examples/inference_speed/serve.log
+PROFILE=agg
+PIDF=/home/isb/models/Crucible/examples/agentic_harness/serve.pid
+LOG=/home/isb/models/Crucible/examples/agentic_harness/serve.log
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    --single) PROFILE=single; shift;;
     --agg) PROFILE=agg; shift;;
     --ngram) PROFILE=ngram; shift;;
     --port) PORT="$2"; shift 2;;
@@ -46,11 +48,7 @@ if [ "$PROFILE" = "agg" ]; then
 elif [ "$PROFILE" = "ngram" ]; then
   # ngram/lookup decoding: drafts from n-gram stats in the running context, NO draft
   # model (~4.5GB less RAM, no draft bandwidth contention — better VPS fit than the
-  # Q3 draft). Lossless: the target still verifies every drafted token. Wins big on
-  # repetitive workloads (code, long-doc summarization/continuation, RAG, structured
-  # output); ~neutral on fresh open-ended chat. Tunables: n-match (lookup length,
-  # default 24) and n-max (max draft tokens). For a prebuilt corpus cache add:
-  #   --spec-type ngram-cache -lcs /path/to/lookup.bin   (built via llama-lookup-create)
+  # Q3 draft). Lossless: the target still verifies every drafted token.
   ARGS=(--threads 6 --batch-size 512 --ubatch-size 512 --ctx-size 4096 --parallel 8
         --flash-attn on --spec-type ngram-mod --spec-ngram-mod-n-max 16 --spec-ngram-mod-n-match 24
         --cache-type-k q8_0 --cache-type-v q8_0)
@@ -80,9 +78,9 @@ if curl -sf "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
   echo
   echo "Quick test:"
   echo "  curl http://127.0.0.1:$PORT/v1/chat/completions -H 'Content-Type: application/json' \\"
-  echo "    -d '{\"model\":\"qwen\",\"messages\":[{\"role\":\"user\",\"content\":\"Say hi in 3 words\"}],\"max_tokens\":20,\"chat_template_kwargs\":{\"enable_thinking\":false}}'"
+  echo "    -d '{\"model\":\"tess\",\"messages\":[{\"role\":\"user\",\"content\":\"Say hi in 3 words\"}],\"max_tokens\":20,\"chat_template_kwargs\":{\"enable_thinking\":false}}'"
   echo
-  echo "Stop:  bash examples/inference_speed/serve_best.sh --stop"
+  echo "Stop:  bash examples/agentic_harness/serve_tess.sh --stop"
 else
   echo "FAILED to become ready in 180s — check $LOG (is port $PORT already in use?)"; exit 1
 fi

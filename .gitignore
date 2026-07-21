@@ -22,3 +22,7 @@ nohup.out
 # inference_speed runtime artifacts
 examples/inference_speed/*.log
 examples/inference_speed/*.pid
+
+# agentic_harness runtime artifacts
+examples/agentic_harness/*.log
+examples/agentic_harness/*.pid

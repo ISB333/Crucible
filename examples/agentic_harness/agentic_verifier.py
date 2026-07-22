@@ -140,12 +140,34 @@ def _locked_run_subset(harness_mod, tasks, ws) -> dict:
     with ThreadPoolExecutor(max_workers=min(12, len(tasks))) as pool:
         solutions = list(pool.map(solve_one, tasks))
 
-    # Phase 2: serial BigCodeBench checks (one fork at a time -> no filelock race).
-    from bcb_wrapper import check_solution
+    # Phase 2: BigCodeBench checks in fresh SUBPROCESSES (one per task). The
+    # verifier process is multi-threaded (orchestrator workers run via asyncio.to_thread)
+    # and has `filelock` loaded; BigCodeBench's untrusted_check uses os.fork, which
+    # trips py3.13's guard ("os.fork is unsafe while filelock is changing descriptor
+    # ownership"). subprocess.run uses posix_spawn (not os.fork), so the verifier is
+    # never forked; each subprocess is single-threaded so its internal fork is safe.
+    import json as _json
+    import subprocess as _subprocess
+    import sys as _sys
+    from pathlib import Path as _Path
+
     from reward_hacking_gate import is_clean
+
+    _CHECK_SCRIPT = str(_Path(__file__).parent / "check_subproc.py")
+
+    def _check(task_id: str, solution: str) -> bool:
+        r = _subprocess.run(
+            [_sys.executable, _CHECK_SCRIPT],
+            input=_json.dumps({"task_id": task_id, "solution": solution}),
+            capture_output=True, text=True, timeout=120,
+        )
+        try:
+            return bool(_json.loads(r.stdout.strip().splitlines()[-1])["pass"])
+        except Exception:
+            return False  # subprocess crash / bad output -> task fails
 
     passed = 0
     for t, sol in zip(tasks, solutions):
-        if sol and is_clean(sol) and check_solution(t.eval_task_id, sol):
+        if sol and is_clean(sol) and _check(t.eval_task_id, sol):
             passed += 1
     return {"pass": passed, "n": len(tasks)}

@@ -154,12 +154,14 @@ else:
 print(solve_text[:2000])
 
 # Independent re-verification (R6): re-run the best harness on the FULL 25-task subset,
-# never trust the search's claim. Uses the verifier's _load_harness for sys.path hygiene.
+# never trust the search's claim. Also re-score the BASELINE harness on the same 25
+# tasks and report the delta — so a regressed edit is never reported as an improvement
+# (the search never verifies the initial artifact, so best_partial can be a regression).
+# The 15 heldout tasks test whether the best edit generalized or overfit the 10 search tasks.
 #
 # _load_harness loads ws / "harness.py", so we create a temp workspace with:
 #   - agent_contract.py (copied from SCRIPT_DIR, so the import resolves)
 #   - harness.py (the best solve body wrapped in the right module structure)
-# This avoids mutating the real harness.py and ensures clean sys.path hygiene.
 if not args.skip_reverify:
     print("\n--- Independent re-verification (full 25-task subset) ---")
     import shutil
@@ -167,36 +169,46 @@ if not args.skip_reverify:
 
     from agent_contract import load_subset  # noqa: E402
 
-    tmp_ws = Path(tempfile.mkdtemp(prefix="reverify_"))
+    v = AgenticCodingVerifier(
+        baseline_path=SCRIPT_DIR / "baseline.json",
+        subset_path=SCRIPT_DIR / "tasks" / "subset.json",
+    )
+    full_tasks = load_subset(SCRIPT_DIR / "tasks" / "subset.json")
+
+    def _score(harness_text: str, label: str) -> tuple[float, int, int]:
+        """Materialize harness_text into a temp ws, run it on all 25 tasks. (rate, pass, n)."""
+        ws = Path(tempfile.mkdtemp(prefix=f"reverify_{label}_"))
+        try:
+            shutil.copy2(SCRIPT_DIR / "agent_contract.py", ws / "agent_contract.py")
+            (ws / "harness.py").write_text(harness_text)
+            mod = v._load_harness(ws)
+            res = _locked_run_subset(mod, full_tasks, SCRIPT_DIR)
+            return res.get("rate", 0.0), res["pass"], res["n"]
+        finally:
+            shutil.rmtree(ws, ignore_errors=True)
+
+    FROZEN_SIG = (
+        "from pathlib import Path\n"
+        "from agent_contract import Task, LLM, Tools\n\n"
+        "def solve(task: Task, workdir: Path, llm: LLM, tools: Tools) -> None:\n"
+    )
     try:
-        # Copy agent_contract.py so the import resolves from the temp workspace
-        shutil.copy2(SCRIPT_DIR / "agent_contract.py", tmp_ws / "agent_contract.py")
-        # Write the best harness: frozen def-solve signature + editable body from the artifact.
-        # The region text (solve_text) is ONLY the indented body — the def line is frozen
-        # outside the region so the worker can't drop it.
-        best_text = solve_text
-        (tmp_ws / "harness.py").write_text(
-            "from pathlib import Path\n"
-            "from agent_contract import Task, LLM, Tools\n\n"
-            "def solve(task: Task, workdir: Path, llm: LLM, tools: Tools) -> None:\n"
-            + best_text
-        )
-        v = AgenticCodingVerifier(
-            baseline_path=SCRIPT_DIR / "baseline.json",
-            subset_path=SCRIPT_DIR / "tasks" / "subset.json",
-        )
-        mod = v._load_harness(tmp_ws)
-        full_tasks = load_subset(SCRIPT_DIR / "tasks" / "subset.json")
-        res = _locked_run_subset(mod, full_tasks, SCRIPT_DIR)
+        # Best edit from the search (solve_text is only the indented body — def is frozen).
+        edit_rate, edit_pass, n = _score(FROZEN_SIG + solve_text, "edit")
+        # Baseline: the real harness.py one-shot, scored on the same 25 for apples-to-apples.
+        base_rate, base_pass, _ = _score((SCRIPT_DIR / "harness.py").read_text(), "base")
+        delta = edit_rate - base_rate
         print(json.dumps({
-            "pass": res["pass"],
-            "n": res["n"],
-            "partial_rate": round(res.get("rate", 0.0), 3),
+            "n": n,
+            "baseline_partial_rate": round(base_rate, 3),
+            "baseline_pass": base_pass,
+            "best_edit_partial_rate": round(edit_rate, 3),
+            "best_edit_pass": edit_pass,
+            "delta": round(delta, 3),
+            "improved": delta > 0,
         }))
     except Exception as exc:
         print(f"re-verification failed: {exc!r}")
-    finally:
-        shutil.rmtree(tmp_ws, ignore_errors=True)
 else:
     print("\n(Skipped re-verification: --skip-reverify)")
 

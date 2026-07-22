@@ -39,6 +39,20 @@ class AgenticCodingVerifier:
         # 1. hole check on the editable solve region only (NOT generic scan_holes)
         if self._solve_has_hole(artifact):
             return Partial(open_holes=(), feedback="solve region unfilled (NotImplementedError)")
+        # 1b. harness-side reward-hacking gate: the harness must solve via the LLM,
+        # not read the BigCodeBench answer key (canonical_solution). GLM-5.2 hit this
+        # on run 1 (import bigcodebench, write canonical -> 0.929, pure hack). Reject
+        # before running Tess so the search discards the hack and the feedback steers
+        # the worker toward legitimate edits.
+        try:
+            region = artifact.region("solve")
+            solve_src = artifact.region_text(region)
+        except Exception:
+            solve_src = ""
+        from reward_hacking_gate import is_harness_clean
+        if not is_harness_clean(solve_src):
+            return Fail(feedback="reward hacking: harness reads the BigCodeBench answer key "
+                                 "(bigcodebench/canonical_solution). Solve via the LLM only.")
         ws = ctx.materialize(artifact)
         # 2. load the harness module the worker wrote
         try:

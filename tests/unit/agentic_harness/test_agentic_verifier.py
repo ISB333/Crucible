@@ -118,6 +118,27 @@ def test_hole_unfilled_returns_partial(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# (a2) harness reads the BigCodeBench answer key → Fail (reward hacking)
+# ---------------------------------------------------------------------------
+
+def test_harness_reads_answer_key_returns_fail(tmp_path):
+    """A harness that imports bigcodebench / canonical_solution to copy the answer
+    is rejected as Fail BEFORE Tess runs -- this is the reward hack GLM-5.2 used on
+    run 1 (write canonical_solution -> passes hidden tests by definition, scored
+    0.929). The gate steers the search toward legitimate harness edits instead."""
+    v = _make_verifier(tmp_path)
+    hack_body = (
+        '    from bigcodebench.data import get_bigcodebench\n'
+        '    canon = get_bigcodebench()[""+task.eval_task_id]["canonical_solution"]\n'
+        '    tools.write_file(str(task.skeleton_path), canon)\n'
+    )
+    art = _artifact(hack_body)
+    result = v.verify(art, _Ctx(tmp_path))
+    assert isinstance(result, Fail), f"expected Fail for answer-key hack, got {type(result).__name__}"
+    assert "reward hacking" in result.feedback.lower()
+
+
+# ---------------------------------------------------------------------------
 # (b) harness import failure → Fail
 # ---------------------------------------------------------------------------
 

@@ -54,7 +54,10 @@ class AgenticCodingVerifier:
         passed, n = res["pass"], res["n"]
         if n == 0:
             return Fail(feedback="no tasks ran")
-        rate = passed / n
+        # Graded signal: prefer the runner's partial pass rate when present (the
+        # real runner returns mean partial pass fraction across tasks); fall back
+        # to binary pass/n for seam-based tests that only return {"pass","n"}.
+        rate = res["rate"] if "rate" in res else passed / n
         baseline = json.loads(Path(self.baseline_path).read_text())["pass_rate"]
         if rate >= baseline + self.target_lift:
             return Ok(produced=artifact)
@@ -155,19 +158,25 @@ def _locked_run_subset(harness_mod, tasks, ws) -> dict:
 
     _CHECK_SCRIPT = str(_Path(__file__).parent / "check_subproc.py")
 
-    def _check(task_id: str, solution: str) -> bool:
+    def _check(task_id: str, solution: str) -> float:
         r = _subprocess.run(
             [_sys.executable, _CHECK_SCRIPT],
             input=_json.dumps({"task_id": task_id, "solution": solution}),
             capture_output=True, text=True, timeout=120,
         )
         try:
-            return bool(_json.loads(r.stdout.strip().splitlines()[-1])["pass"])
+            return float(_json.loads(r.stdout.strip().splitlines()[-1])["rate"])
         except Exception:
-            return False  # subprocess crash / bad output -> task fails
+            return 0.0  # subprocess crash / bad output -> task scores 0
 
-    passed = 0
+    # Graded: mean partial pass rate across the subset. Empty/unclean solutions
+    # score 0.0; is_clean gates reward-hacking before any subprocess check runs.
+    rates: list[float] = []
     for t, sol in zip(tasks, solutions):
-        if sol and is_clean(sol) and _check(t.eval_task_id, sol):
-            passed += 1
-    return {"pass": passed, "n": len(tasks)}
+        if sol and is_clean(sol):
+            rates.append(_check(t.eval_task_id, sol))
+        else:
+            rates.append(0.0)
+    mean_rate = sum(rates) / len(rates) if rates else 0.0
+    passed = sum(1 for r in rates if r >= 1.0)
+    return {"pass": passed, "n": len(tasks), "rate": mean_rate}

@@ -189,6 +189,28 @@ def test_rate_below_threshold_returns_scored(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# (e2) graded "rate" key is preferred over binary pass/n
+# ---------------------------------------------------------------------------
+
+def test_graded_rate_key_is_preferred(tmp_path, monkeypatch):
+    """When the runner returns a graded ``rate``, the verifier uses it (not pass/n).
+
+    This locks the graded-signal contract: the real runner returns mean partial
+    pass fraction in ``rate``. A runner claiming pass=0/n=10 but rate=0.25 must
+    Scored(0.25), not Scored(0.0) — the graded signal must win so the search sees
+    Tess's partial-credit progress (e.g. 5/6 tests on a Hard task = 0.833).
+    """
+    def graded_runner(harness_mod, tasks, ws):
+        return {"pass": 0, "n": 10, "rate": 0.25}  # 0.25 >= 0.0 + 0.10 -> Ok
+
+    v = _make_verifier(tmp_path, baseline_rate=0.0, runner=graded_runner)
+    art = _artifact("    pass")
+    monkeypatch.setattr(AgenticCodingVerifier, "_search_subset", lambda self: _fake_tasks())
+    result = v.verify(art, _Ctx(tmp_path))
+    assert isinstance(result, Ok), f"expected Ok (graded 0.25 >= 0.10), got {type(result).__name__}"
+
+
+# ---------------------------------------------------------------------------
 # sys.path fix: harness that imports from agent_contract loads successfully
 # ---------------------------------------------------------------------------
 

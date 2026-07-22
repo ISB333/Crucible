@@ -191,7 +191,7 @@ if not args.skip_reverify:
         print(json.dumps({
             "pass": res["pass"],
             "n": res["n"],
-            "pass_rate": round(res["pass"] / res["n"], 3) if res["n"] > 0 else 0,
+            "partial_rate": round(res.get("rate", 0.0), 3),
         }))
     except Exception as exc:
         print(f"re-verification failed: {exc!r}")

@@ -110,27 +110,42 @@ class AgenticCodingVerifier:
 
 
 def _locked_run_subset(harness_mod, tasks, ws) -> dict:
-    """Real runner: concurrent sandboxed solves against Tess + BigCodeBench check."""
+    """Real runner: concurrent Tess solves (fork-free, batched) + serial checks.
+
+    The split is deliberate: BigCodeBench's untrusted_check uses multiprocessing
+    (fork) + a filelock; CONCURRENT check_solution calls trip Python 3.13's
+    fork-safety guard ("os.fork is unsafe while filelock is changing descriptor
+    ownership"). The baseline measurement proved SERIAL check_solution is safe
+    (10 serial calls, no crash); the Tess solves are fork-free and batch on the
+    server, so they stay concurrent for speed.
+    """
     from concurrent.futures import ThreadPoolExecutor
 
     from agent_contract import LLM
-    from bcb_wrapper import check_solution
-    from reward_hacking_gate import is_clean
     from sandbox import run_solve_capped, sandbox_fresh_workdir
 
     llm = LLM(base_url="http://127.0.0.1:9090/v1", model="tess")
 
-    def one(t):
+    def solve_one(t):
         with _verify_lock:  # bound memory; tasks still batch on the Tess server
             wd = sandbox_fresh_workdir(t)
         run_solve_capped(harness_mod.solve, t, wd, llm,
                          max_turns=8, max_tokens=256, wall_s=180)
         try:
-            sol = (wd / t.skeleton_path).read_text()
+            return (wd / t.skeleton_path).read_text()
         except Exception:
-            return 0
-        return 1 if (is_clean(sol) and check_solution(t.eval_task_id, sol)) else 0
+            return ""
 
+    # Phase 1: concurrent solves against Tess (fork-free, batched at ~10 tok/s).
     with ThreadPoolExecutor(max_workers=min(12, len(tasks))) as pool:
-        results = list(pool.map(one, tasks))
-    return {"pass": sum(results), "n": len(results)}
+        solutions = list(pool.map(solve_one, tasks))
+
+    # Phase 2: serial BigCodeBench checks (one fork at a time -> no filelock race).
+    from bcb_wrapper import check_solution
+    from reward_hacking_gate import is_clean
+
+    passed = 0
+    for t, sol in zip(tasks, solutions):
+        if sol and is_clean(sol) and check_solution(t.eval_task_id, sol):
+            passed += 1
+    return {"pass": passed, "n": len(tasks)}

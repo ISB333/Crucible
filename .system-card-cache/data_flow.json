@@ -1,0 +1,9 @@
+{
+  "composite_hash": "3be7c08b9f43a99956e045d7205fce0fd2262313a8c58e496f042fe8ad5b2879",
+  "report": {
+    "agent_name": "DataFlowAgent",
+    "section": "data_flow",
+    "claims": [],
+    "prose": "## Data Flows\n\nNo source code files were provided in the context, preventing the tracing of end-to-end data flows or the creation of sequence diagrams."
+  }
+}

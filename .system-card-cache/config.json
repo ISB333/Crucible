@@ -1,0 +1,43 @@
+{
+  "composite_hash": "3051f77b6217158f41e1549c0c54f3ab6a1cccfafe7afc701d9f6c7a5d35763f",
+  "report": {
+    "agent_name": "ConfigAgent",
+    "section": "config",
+    "claims": [
+      {
+        "text": "The ANTHROPIC_API_KEY environment variable is used to configure API access for Anthropic Claude models.",
+        "citations": [
+          {
+            "file": ".env.example",
+            "line_start": 4,
+            "line_end": 5
+          }
+        ],
+        "category": null
+      },
+      {
+        "text": "Google Gemini API integration supports both GOOGLE_API_KEY and GEMINI_API_KEY environment variables.",
+        "citations": [
+          {
+            "file": ".env.example",
+            "line_start": 7,
+            "line_end": 10
+          }
+        ],
+        "category": null
+      },
+      {
+        "text": "OpenAI-compatible endpoints can be configured using the OPENAI_API_KEY and OPENAI_BASE_URL environment variables to connect to OpenAI or local models.",
+        "citations": [
+          {
+            "file": ".env.example",
+            "line_start": 12,
+            "line_end": 14
+          }
+        ],
+        "category": null
+      }
+    ],
+    "prose": "## Configuration\n\nCrucible can be configured to integrate with several LLM providers using the following optional environment variables:\n\n- `ANTHROPIC_API_KEY`: Configures access to Anthropic's Claude models.\n- `GOOGLE_API_KEY` (or `GEMINI_API_KEY`): Used to authenticate with Google Gemini models.\n- `OPENAI_API_KEY`: Sets the API key for OpenAI or compatible local models.\n- `OPENAI_BASE_URL`: Sets a custom base URL for OpenAI-compatible endpoints, enabling integrations with alternative endpoints or local runtimes."
+  }
+}

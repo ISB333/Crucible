@@ -1,0 +1,9 @@
+{
+  "composite_hash": "8f3d945e5393173a2fea5f887ef2fcbe2df080048f6fe30f68efe5a9a75f6916",
+  "report": {
+    "agent_name": "APIScannerAgent",
+    "section": "api_scanner",
+    "claims": [],
+    "prose": "## API Surface\n\nNo HTTP routes, public interfaces, or WebSocket events were detected because no source files were provided for analysis."
+  }
+}

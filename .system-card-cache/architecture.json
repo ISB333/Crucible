@@ -1,0 +1,9 @@
+{
+  "composite_hash": "3be7c08b9f43a99956e045d7205fce0fd2262313a8c58e496f042fe8ad5b2879",
+  "report": {
+    "agent_name": "ArchitectureAgent",
+    "section": "architecture",
+    "claims": [],
+    "prose": "{\"prose\":\"## Architecture\\n\\nCrucible utilizes an orchestrator-worker architecture designed to safely run and verify tasks within isolated sandbox environments. The codebase is modular, separating execution environments, LLM generation providers, and custom task verifiers.\\n\\n### Module Breakdown\\n\\n- **CLI Interface**: `crucible/cli.py` acts as the main user entry point to initiate task evaluations and runs.\\n- **Orchestration & Task Management**: `crucible/orchestrator.py` and `crucible/task.py` coordinate the agent loop, dispatching work, tracking state"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "composite_hash": "7fdaf55e3c84396a2d75c516f55a239cb12ddef0b850a370fac2632801c3a3c8",
+  "report": {
+    "agent_name": "TechStackAgent",
+    "section": "tech_stack",
+    "claims": [],
+    "prose": "hatchling.build\" # Line 28\n```\n\nAnd `uv.lock`:\n```\n[[package]]\nname = \"accelerate\" # Line 18\nversion = \"1.14.0\" # Line 19\n```\n\nThis is extremely precise. I'll construct the JSON.{\n \"prose\": \""
+  }
+}

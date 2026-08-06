@@ -1,0 +1,9 @@
+{
+  "composite_hash": "fca9596bcf80947333682c1db024771d3a014d09c35a40d8dffd21662c37e2ee",
+  "report": {
+    "agent_name": "ModuleGraphAgent",
+    "section": "module_graph",
+    "claims": [],
+    "prose": "## Module Dependencies\n\n### Dependency Flowchart\n\n```mermaid\nflowchart LR\n  cli --> sdk[__init__]\n  cli --> verifiers\n  cli --> task\n  cli --> budgets\n  cli --> store\n  cli --> verify\n\n  sdk --> orchestrator\n  sdk --> advisor\n  sdk --> artifact\n  sdk --> budgets\n  sdk --> llm"
+  }
+}

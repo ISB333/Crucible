@@ -1,0 +1,9 @@
+{
+  "composite_hash": "a8b11510b4b939969e22cee768599b6198a72e85bd3da309723074e68388fc9c",
+  "report": {
+    "agent_name": "DocReaderAgent",
+    "section": "doc_reader",
+    "claims": [],
+    "prose": "```json\n{\n  \"prose\": \"## Overview\\n\\nCrucible is a verifier-grounded multi-agent search engine designed to iteratively refine solutions to tasks containing immutable regions and explicit editable holes. It runs parallel, sandboxed LLM workers that edit, verify, and incorporate feedback in an optimization loop, shifting the standard of correctness from model confidence to deterministic external verification. Built"
+  }
+}

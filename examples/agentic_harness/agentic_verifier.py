@@ -36,6 +36,10 @@ class AgenticCodingVerifier:
         return f"agentic:lift={self.target_lift}"
 
     def verify(self, artifact: Artifact, ctx: RunContext) -> Verdict:
+        # Point the sandbox at this benchmark's tasks dir (e.g. tasks_easy for the
+        # --benchmark easy run) so sandbox_fresh_workdir copies the right skeleton.
+        from sandbox import set_tasks_root
+        set_tasks_root(self.subset_path.parent)
         # 1. hole check on the editable solve region only (NOT generic scan_holes)
         if self._solve_has_hole(artifact):
             return Partial(open_holes=(), feedback="solve region unfilled (NotImplementedError)")

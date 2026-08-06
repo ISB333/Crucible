@@ -50,9 +50,20 @@ ap.add_argument("--plateau-patience", type=int, default=3,
                 help="stop a worker after N episodes with no rank improvement")
 ap.add_argument("--sandbox", choices=["subprocess", "docker"], default="subprocess")
 ap.add_argument("--db", default=str(SCRIPT_DIR / "agentic.db"))
+ap.add_argument("--benchmark", choices=["hard", "easy"], default="hard",
+                help="BigCodeBench subset: 'hard' (ceiling) or 'easy' (headroom)")
 ap.add_argument("--skip-reverify", action="store_true",
                 help="skip the independent re-verification on the full 25-task subset")
 args = ap.parse_args()
+
+# benchmark -> (tasks dir, baseline file). Used for both the verifier ranking
+# and the R6 re-verification, so the search and the re-check use the same subset.
+_BENCH = {
+    "hard": ("tasks", "baseline.json"),
+    "easy": ("tasks_easy", "baseline_easy.json"),
+}[args.benchmark]
+_BENCH_SUBSET = SCRIPT_DIR / _BENCH[0] / "subset.json"
+_BENCH_BASELINE = SCRIPT_DIR / _BENCH[1]
 
 def _is_ollama_cloud(model: str | None) -> bool:
     """True for models routed through Ollama Cloud (non-Gemini, non-Claude)."""
@@ -119,8 +130,8 @@ _task_files = tuple(
 )
 
 verifier = AgenticCodingVerifier(
-    baseline_path=SCRIPT_DIR / "baseline.json",
-    subset_path=SCRIPT_DIR / "tasks" / "subset.json",
+    baseline_path=_BENCH_BASELINE,
+    subset_path=_BENCH_SUBSET,
 )
 
 result = run(
@@ -170,10 +181,10 @@ if not args.skip_reverify:
     from agent_contract import load_subset  # noqa: E402
 
     v = AgenticCodingVerifier(
-        baseline_path=SCRIPT_DIR / "baseline.json",
-        subset_path=SCRIPT_DIR / "tasks" / "subset.json",
+        baseline_path=_BENCH_BASELINE,
+        subset_path=_BENCH_SUBSET,
     )
-    full_tasks = load_subset(SCRIPT_DIR / "tasks" / "subset.json")
+    full_tasks = load_subset(_BENCH_SUBSET)
 
     def _score(harness_text: str, label: str) -> tuple[float, int, int]:
         """Materialize harness_text into a temp ws, run it on all 25 tasks. (rate, pass, n)."""

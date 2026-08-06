@@ -14,6 +14,18 @@ from typing import Callable
 
 from agent_contract import Task, LLM, Tools
 
+# Module-level tasks root (which BigCodeBench subset dir to copy skeletons from).
+# Defaults to the "hard" tasks dir; set_tasks_root() switches it for the "easy"
+# benchmark so sandbox_fresh_workdir copies from tasks_easy/ without changing the
+# frozen sandbox_fresh_workdir signature.
+_TASKS_ROOT: Path = Path(__file__).parent / "tasks"
+
+
+def set_tasks_root(path: Path) -> None:
+    """Set the tasks source dir (e.g. tasks_easy for the --benchmark easy run)."""
+    global _TASKS_ROOT
+    _TASKS_ROOT = Path(path)
+
 
 def sandbox_fresh_workdir(task: Task, base: Path | None = None, *, _tasks_root: Path | None = None) -> Path:
     """Create a fresh isolated workdir for a task, with the skeleton copied in.
@@ -32,7 +44,7 @@ def sandbox_fresh_workdir(task: Task, base: Path | None = None, *, _tasks_root: 
     import tempfile
 
     root = Path(base) if base else Path(tempfile.mkdtemp(prefix="agentic_"))
-    tasks_root = _tasks_root or Path(__file__).parent / "tasks"
+    tasks_root = _tasks_root or _TASKS_ROOT
     src = tasks_root / task.eval_task_id / "skeleton.py"
     dst = root / task.skeleton_path
     dst.parent.mkdir(parents=True, exist_ok=True)

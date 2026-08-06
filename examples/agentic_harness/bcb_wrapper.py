@@ -9,8 +9,10 @@ from bigcodebench.data import get_bigcodebench
 from bigcodebench.eval import untrusted_check
 
 
-def load_tasks(subset: str = "hard") -> dict[str, dict]:
-    """task_id -> task dict (subset: 'full' | 'hard' | 'instruct' | 'complete')."""
+def load_tasks(subset: str = "full") -> dict[str, dict]:
+    """task_id -> task dict (subset: 'full' | 'hard'). Default 'full' (the 1140-task
+    superset) so check_solution* can resolve any task_id regardless of which
+    benchmark subset it was curated from. Caches after first load."""
     return get_bigcodebench(subset=subset)
 
 

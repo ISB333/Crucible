@@ -22,15 +22,34 @@ from harness import solve
 
 ROOT = Path(__file__).parent
 
+# benchmark name -> (tasks dir, baseline file). "hard" = BigCodeBench-Hard (Tess
+# at its ceiling, no headroom); "easy" = non-Hard BigCodeBench (headroom test:
+# does the harness lift a model NOT already at its ceiling?).
+_BENCHMARKS = {
+    "hard": ("tasks", "baseline.json"),
+    "easy": ("tasks_easy", "baseline_easy.json"),
+}
+
 
 def main() -> None:
-    from sandbox import run_solve_capped, sandbox_fresh_workdir
+    import argparse
+
     from reward_hacking_gate import is_clean
+    from sandbox import run_solve_capped, sandbox_fresh_workdir, set_tasks_root
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--benchmark", choices=sorted(_BENCHMARKS), default="hard")
+    args = ap.parse_args()
+    tasks_dir, baseline_file = _BENCHMARKS[args.benchmark]
+    set_tasks_root(ROOT / tasks_dir)  # copy skeletons from the right benchmark dir
 
     # Search subset only — same 10 tasks the verifier ranks on.
-    all_tasks = load_subset(ROOT / "tasks" / "subset.json")
+    all_tasks = load_subset(ROOT / tasks_dir / "subset.json")
     tasks = [t for t in all_tasks if t.id.startswith("search/")]
-    print(f"Measuring baseline on {len(tasks)} search tasks (filtered from {len(all_tasks)} total)")
+    print(
+        f"Measuring baseline [{args.benchmark}] on {len(tasks)} search tasks "
+        f"(filtered from {len(all_tasks)} total)"
+    )
 
     llm = LLM(base_url="http://127.0.0.1:9090/v1", model="tess")
 
@@ -46,7 +65,7 @@ def main() -> None:
         print(f"  clean={clean} partial_rate={rate:.3f}", flush=True)
 
     mean_rate = sum(rates) / len(rates) if rates else 0.0
-    (ROOT / "baseline.json").write_text(
+    (ROOT / baseline_file).write_text(
         json.dumps({"pass_rate": mean_rate, "n": len(tasks)}, indent=2) + "\n"
     )
     print(f"baseline pass_rate (graded)={mean_rate:.3f} on {len(tasks)} tasks")

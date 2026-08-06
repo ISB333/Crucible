@@ -32,8 +32,11 @@ bash "$DIR/serve_tess.sh"
 set -a && source .env && set +a
 
 # Launch the search detached. When it finishes, stop Tess (frees ~10GB RAM).
+# Pass BENCHMARK=easy for the non-hard second benchmark; MODEL/WORKERS override too.
+MODEL="${MODEL:-glm-5.2:cloud}"
+BENCH="${BENCHMARK:-hard}"
 setsid bash -c "echo \$\$ > '$PIDF'; env PYTHONUNBUFFERED=1 uv run python -u $DIR/run_agentic.py \
-  --model glm-5.2:cloud --no-advisor --workers 3 --episodes 6 --edits 4 --turns 8 \
+  --model $MODEL --no-advisor --benchmark $BENCH --workers 3 --episodes 6 --edits 4 --turns 8 \
   --wall-clock 10h --plateau-patience 3 >> '$LOG' 2>&1; \
   bash '$DIR/serve_tess.sh' --stop >> '$LOG' 2>&1" < /dev/null &
 disown

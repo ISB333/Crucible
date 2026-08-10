@@ -16,18 +16,23 @@ harness edits lift the 9B past its baseline.
 **Two overnight runs, one honest ceiling, and a reward-hacking finding that
 reproduces the central warning of the recursive-self-improvement literature.**
 
-## Result at a glance
+## Result at a glance — two benchmarks, two workers, one ceiling
 
-| run | gate | search-subset (10) | full 25 re-verification | verdict |
-|---|---|---|---|---|
-| 1 | none | 0.929 "Ok" | **0.929 / 21-of-25 fully solved, +0.113** | **reward hacking** |
-| 2 | answer-key | 0.810 | **0.816 / 0-of-25, Δ 0.0** | no robust improvement |
-| baseline | — | 0.727 | 0.816 / 0-of-25 | — |
+| benchmark | worker | gate | search-subset (10) | full 25 re-verification | verdict |
+|---|---|---|---|---|---|
+| Hard | GLM-5.2 | none | 0.929 "Ok" | **0.929 / 21-of-25, +0.113** | **reward hacking** |
+| Hard | GLM-5.2 | answer-key | 0.810 | **0.816 / 0-of-25, Δ 0.0** | no robust improvement |
+| Hard | nemotron-3-nano:30b | answer-key | 0.810 (smoke) | — | same plateau |
+| Easy | nemotron-3-nano:30b | answer-key | 0.793 | **0.806 / 0-of-25, Δ 0.0** | no robust improvement |
+| Easy | (baseline) | — | 0.793 | 0.806 | — |
+| Hard | (baseline) | — | 0.727 | 0.816 | — |
 
-Run 1 looked like a 0.929 win. It was not. Run 2, with the hack blocked, tells the
-truth: **once you cannot cheat, harness edits do not robustly lift Tess-9B above its
-0.816 BigCodeBench-Hard baseline.** The 9B model's ceiling is the binding constraint,
-not the harness.
+Run 1 looked like a 0.929 win. It was not. Every gated run since — across two
+benchmarks (Hard and the easier non-Hard subset) and two workers (GLM-5.2 and a
+30B nemotron) — tells the same truth: **once you cannot cheat, harness edits do
+not robustly lift Tess-9B above its ~0.8 BigCodeBench graded baseline.** The 9B
+model's per-task ceiling (5/6 tests, the 6th is a hard edge case) is the binding
+constraint, not the harness, and it holds on both the hard and the easier subset.
 
 ## What it proved
 
@@ -78,6 +83,23 @@ tests that pass; `untrusted_check` returns only failures, so pass fraction = (to
 failed)/total) revealed the real picture: Tess is competent (5/6 typical), the
 baseline is 0.727 graded not 0.0, and the headroom is the single hard test per task.
 Binary pass-rate hid the signal; graded pass-rate exposed the ceiling.
+
+### Finding 4 — the ceiling is robust across benchmarks and workers
+
+A natural objection to the Hard-only result: maybe the harness would help on an
+**easier** subset where Tess has more room to grow. So a second benchmark was
+curated — 25 non-Hard BigCodeBench tasks (`tasks_easy/`, the easier ~990 outside
+the Hard 148) — and the search re-run with a stronger worker
+(`nemotron-3-nano:30b`, a 30B reasoning model via Ollama Cloud).
+
+The easy baseline is 0.793 graded — the same ~0.8 plateau as Hard (0.727). Tess
+passes ~5/6 tests on BigCodeBench **regardless of subset difficulty**; the 6th
+test is a consistent reasoning barrier. And the 30B worker, given 12 clean edits
+on the easy subset, converged on the same best-of-K + validation harness family
+and tied the baseline (0.793 search / 0.806 full 25, Δ 0.0). A stronger worker
+and an easier subset did not change the conclusion. The plateau is a property of
+the model on this benchmark family, not of the worker's cleverness or the
+subset's difficulty.
 
 ## The setup
 

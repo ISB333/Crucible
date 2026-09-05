@@ -20,7 +20,7 @@ Crucible is **an experiment, not a product.** Its real question is:
 
 > *How far does a verifier-grounded LLM loop get on a shoestring?*
 
-The two papers below were run with serious infrastructure — reinforcement-learning provers on TPUs, frontier multi-agent platforms, evolutionary populations, thousands of episodes per problem. Crucible deliberately keeps **only the cheapest configuration**: no training, no RL, no fine-tuning, no evolutionary search — a single developer, one machine, a handful of parallel workers, small token budgets, and either a frontier API or a local model. It is a probe of how much of those papers' capability survives at the low-resource end. (One of the papers' own surprising results is that this cheapest configuration is far more competitive than expected — see [What we found](#what-we-found).)
+The two papers below were run with serious infrastructure — reinforcement-learning provers on TPUs, frontier multi-agent platforms, evolutionary populations, thousands of episodes per problem. Crucible deliberately keeps **only the cheapest configuration**: no training, no RL, no fine-tuning, no evolutionary search — a single developer, one machine, a handful of parallel workers, small token budgets, and either a frontier API or a local model. It is a probe of how much of those papers' capability survives at the low-resource end. (One of the papers' own surprising results is that this cheapest configuration is far more competitive than expected — see [What I found](#what-I-found).)
 
 It is **not** a reproduction of either paper's full system, and it is not a benchmark. Treat every number here as "what one person reached with very little."
 
@@ -51,7 +51,7 @@ The first worker to clear all four wins and the run ends. If no worker wins
 within budget, the run returns `best_partial` — the highest-ranked attempt
 (`Ok > Scored > Partial > Fail`, then score, then fewest open holes).
 
-## What we found
+## What I found
 
 Four results, in increasing order of interest.
 
@@ -210,7 +210,7 @@ under fresh re-verify.
 A second reference is the `SidonVerifier` (`examples/sidon/`): it scores by **set
 size** and recomputes every pairwise sum exactly, so the objective is strong and
 ungameable — the same `Scored` machinery on a pure-math problem with no surrogate
-to exploit. See [What we found](#what-we-found) for why the two make a matched pair.
+to exploit. See [What I found](#what-I-found) for why the two make a matched pair.
 
 ## Examples
 
@@ -291,7 +291,7 @@ GOOGLE_API_KEY=... .venv/bin/python examples/chem/run_chem.py
 
 Each challenge presents a starting molecule and Crucible iteratively modifies it to improve solubility, guided by the RDKit-based `Chem` verifier's scoring function. The goal is to reach a logS value ≥ 0.0 (highly soluble).
 
-> **Heads-up:** this ladder is also Crucible's clearest *negative* result — see [What we found](#what-we-found). The model games the surrogate by spamming hydroxyl groups onto the scaffold rather than designing sensible molecules. That is the point: it shows what a weak verifier costs you.
+> **Heads-up:** this ladder is also Crucible's clearest *negative* result — see [What I found](#what-I-found). The model games the surrogate by spamming hydroxyl groups onto the scaffold rather than designing sensible molecules. That is the point: it shows what a weak verifier costs you.
 
 
 ### Sidon Set (Erdős stress test)
